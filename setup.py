@@ -9,7 +9,7 @@ PACKAGE_VERSION = '0.1'
 
 setup(name=PACKAGE_NAME,
       version=PACKAGE_VERSION,
-      description="Basic per directory churn metrics for Mercurial Repo",
+      description="Basic per file change for Mercurial Repo",
       long_description="TODO: Create read the docs",
       author='Mozilla Automation and Testing Team',
       author_email='tools@lists.mozilla.org',
@@ -29,6 +29,6 @@ setup(name=PACKAGE_NAME,
                   ],
       entry_points={
           "console_scripts": [
-              "hgchurn = churn"
+              "hgchurn = metrics"
           ]}
      )

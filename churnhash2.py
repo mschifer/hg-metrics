@@ -22,7 +22,7 @@ class ChurnHash(object):
         # Note we base64 encode the path so that two files with the same name
         # but different paths will not match could use the file path but then
         # the keys get really unwieldy
-        print file_path
+        #print file_path
         encodedpath = base64.b64encode(file_path)
         if encodedpath in self._hash:
             self._hash[encodedpath]['lines_added'] += lines_added
@@ -34,7 +34,7 @@ class ChurnHash(object):
             self._hash[encodedpath]['lines_added'] = lines_added
             self._hash[encodedpath]['lines_removed'] = lines_removed
             self._hash[encodedpath]['lines_total'] = lines_total
-        print encodedpath 
+        #print encodedpath 
     def _get_entry(self, file_path):
         encodedpath = base64.b64encode(file_path)
         if encodedpath not in self._hash:
