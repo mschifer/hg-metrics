@@ -59,11 +59,6 @@ for release in list:
         output[i][release]['lines_total'] = h[i]['lines_total']
         output[i]['file'] = '%s' % h[i]['file']
 
-# Output in csv format
-#nfp = open('nightly-0.csv', "w")
-#afp = open('aurora-0.csv', "w")
-#bfp = open('beta-0.csv', "w")
-
 n_header = 'File'
 a_header = 'File'
 b_header = 'File'
@@ -71,71 +66,28 @@ release_ids = {}
 file_ids    = {}
 
 for release in list:
-    if 'nightly' in release:
-       n_header += ', %s' % release
-    if 'aurora' in release:
-       a_header += ', %s' % release
-    if 'beta' in release:
-       b_header += ', %s' % release
+    # for each release check the file stats and update the database
     rel_id =  _backend.get_release_id(release)
     if len(rel_id) == 0:
        print 'Release Not Found: Adding Release'
        rel_id =   _backend.add_release_values(release)
-    print "REL_ID1: %d" % rel_id[0]
     release_ids[release] = int(rel_id[0][0])
-    print 'REL_ID2: %d' % release_ids[release]
-
-print release_ids
-for k in release_ids:
-    print 'K: %s %d'  % ( k,int(release_ids[k]))
-#n_header += '\n'
-#a_header += '\n'
-#b_header += '\n'
-#
-#nfp.write(n_header)
-#afp.write(a_header)
-#bfp.write(b_header)
-#
-for i in output:
-     # check if file is in database, if not add it and get ID.
-     file_id = _backend.get_file_id(output[i]['file'])
-     if len(file_id) == 0:
-        print 'Adding File to Database'
-        file_id = _backend.add_file_values(output[i]['file'])
-     print 'File ID: %s %s' % (file_id,output[i]['file'])
-     file_ids[output[i]['file']] = file_id[0][0]
-     
-     # add thef file data for this release
-     if release in output[i]: 
-         _backend.add_change_values(file_id[0][0],release_ids[release],output[i][release]['delta'] , output[i][release]['lines_total'] , output[i][release]['percent'])
-     else:
-         _backend.add_change_values(file_id[0][0], 0 , 0 , 0, 0 )
+   
+    for i in output:
+        # check if file is in database, if not add it and get ID.
+        file_id = _backend.get_file_id(output[i]['file'])
+        if len(file_id) == 0:
+           print 'Adding File to Database'
+           file_id = _backend.add_file_values(output[i]['file'])
+        print 'File ID: %s %s' % (file_id,output[i]['file'])
+        file_ids[output[i]['file']] = file_id[0][0]
+        
+        # add thef file data for this release
+        if release in output[i]: 
+            _backend.add_change_values(file_id[0][0],release_ids[release],output[i][release]['delta'] , output[i][release]['lines_total'] , output[i][release]['percent'])
+        else:
+            _backend.add_change_values(file_id[0][0], 0 , 0 , 0, 0 )
     
-#    nfp.write(output[i]['file'])
-#    afp.write(output[i]['file'])
-#    bfp.write(output[i]['file'])
-#    for release in list:
-#        if release in output[i]: 
-#           csv_entry = ", %s %s %s %s" % (release,output[i][release]['delta'],output[i][release]['lines_total'],output[i][release]['percent'])
-#        else:
-#           csv_entry = ", %s %s %s %s" % (release,0,0,0)
-#
-#        if 'nightly' in release:
-#            nfp.write(csv_entry)
-#        if 'aurora' in release:
-#            afp.write(csv_entry)
-#        if 'beta' in release:
-#            bfp.write(csv_entry)
-#    nfp.write('\n')
-#    afp.write('\n')
-#    bfp.write('\n')
-#
-#nfp.close()
-#afp.close()
-#bfp.close()
-#
-#
-#
 #
 ##for i in h:
 ##    if (h[i]['file'].count('/') <=3 and (h[i]['file'].count('.') == 0)):
