@@ -106,7 +106,10 @@ for i in output:
      file_ids[output[i]['file']] = file_id[0][0]
      
      # add thef file data for this release
-     _backend.add_change_values(file_id[0][0],release_ids[release],output[i][release]['delta'] , output[i][release]['lines_total'] , output[i][release]['percent'])
+     if release in output[i]: 
+         _backend.add_change_values(file_id[0][0],release_ids[release],output[i][release]['delta'] , output[i][release]['lines_total'] , output[i][release]['percent'])
+     else:
+         _backend.add_change_values(file_id[0][0], 0 , 0 , 0, 0 )
     
 #    nfp.write(output[i]['file'])
 #    afp.write(output[i]['file'])
