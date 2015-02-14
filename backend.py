@@ -15,7 +15,7 @@ create_table_stmts = {METRICS_RELEASE_TABLE_NAME: '''CREATE TABLE metrics_releas
                       METRICS_FILE_LIST: '''CREATE TABLE metrics_files(file_name VARCHAR(250),
                                             file_id INTEGER PRIMARY KEY)''',
                       METRICS_CHANGES: '''CREATE TABLE metrics_changes(delta INTEGER, total_lines INTEGER, percent_change INTEGER,
-                                          file_id INTEGER, release_id INTEGER, PRIMARY KEY(file_id, release_id))''' }
+                                          file_id INTEGER, release_id INTEGER) ''' }
 # Does the table exist query
 TABLE_EXIST_STMT = "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
 

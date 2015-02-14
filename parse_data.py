@@ -35,7 +35,6 @@ for release in list:
     ch = ChurnHash()
 
     for i in history:
-        #print 'I:%s' % i
         for j in history[i]["files"]:
             if "filename" in j:
                 fname = "/Users/mschifer/mozilla-central/%s" % j["filename"]
@@ -49,7 +48,6 @@ for release in list:
     h = ch.get_hash()
     for i in h:
         percent_change =  ( ( float( h[i]['lines_added']) + float( h[i]['lines_removed'] )) / float(h[i]['lines_total'] ) ) * 100
-        #print 'ZZZ:Release:%s File:%s A:%s R:%s D:%s H:%s' % (release,  h[i]['file'], h[i]['lines_added'], h[i]['lines_removed'], int( h[i]['lines_added']) + int( h[i]['lines_removed']), i )
         if i not in output:
            output[i] = {}
         if release not in output[i]:
@@ -77,16 +75,14 @@ for release in list:
         # check if file is in database, if not add it and get ID.
         file_id = _backend.get_file_id(output[i]['file'])
         if len(file_id) == 0:
-           print 'Adding File to Database'
            file_id = _backend.add_file_values(output[i]['file'])
-        print 'File ID: %s %s' % (file_id,output[i]['file'])
         file_ids[output[i]['file']] = file_id[0][0]
         
         # add thef file data for this release
         if release in output[i]: 
             _backend.add_change_values(file_id[0][0],release_ids[release],output[i][release]['delta'] , output[i][release]['lines_total'] , output[i][release]['percent'])
         else:
-            _backend.add_change_values(file_id[0][0], 0 , 0 , 0, 0 )
+            _backend.add_change_values(file_id[0][0],release_ids[release] , 0 , 0, 0 )
     
 #
 ##for i in h:
