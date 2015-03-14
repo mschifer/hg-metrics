@@ -15,7 +15,7 @@ class ChurnHash(object):
     def __init__(self):
         self._hash = {}
 
-    def _add_entry(self, file_path, lines_added, lines_removed, lines_total):
+    def _add_entry(self, file_path, lines_added, lines_removed, lines_total, bug):
         if file_path == '':
             raise ChurnHashError("Empty File path being added to FileHash")
 
@@ -34,6 +34,7 @@ class ChurnHash(object):
             self._hash[encodedpath]['lines_added'] = lines_added
             self._hash[encodedpath]['lines_removed'] = lines_removed
             self._hash[encodedpath]['lines_total'] = lines_total
+            self._hash[encodedpath]['bug'] = bug
         #print encodedpath 
     def _get_entry(self, file_path):
         encodedpath = base64.b64encode(file_path)
@@ -41,14 +42,14 @@ class ChurnHash(object):
             raise ChurnHashError("%s not found in FileHash" % file_path)
         return self._hash[encodedpath]['lines_changed']
 
-    def add_file_path(self, file_path, lines_added, lines_removed, lines_total):
+    def add_file_path(self, file_path, lines_added, lines_removed, lines_total, bug):
         #xx = float(lines_added) + float(lines_removed) / float(lines_total)
         # This makes the assumption that it is called with fully specified files
         # with a common root and unix style ('/') paths
         if file_path == '':
             raise ChurnHashError("Empty File path used in ChurnHash add file")
         for pathsnippet in self._path_generator(file_path):
-            self._add_entry(pathsnippet, lines_added, lines_removed, lines_total)
+            self._add_entry(pathsnippet, lines_added, lines_removed, lines_total, bug)
 
     def get_churn(self, file_path):
         return self._get_entry(file_path)

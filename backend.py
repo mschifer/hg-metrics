@@ -13,16 +13,17 @@ METRICS_CHANGES            = 'metrics_changes'
 create_table_stmts = {METRICS_RELEASE_TABLE_NAME: '''CREATE TABLE metrics_releases(release_name VARCHAR(100), 
                                            release_id INTEGER PRIMARY KEY)''',
                       METRICS_FILE_LIST: '''CREATE TABLE metrics_files(file_name VARCHAR(250),
-                                            file_id INTEGER PRIMARY KEY)''',
+                                            file_id INTEGER PRIMARY KEY, avg_change INTEGER)''',
                       METRICS_CHANGES: '''CREATE TABLE metrics_changes(delta INTEGER, total_lines INTEGER, percent_change INTEGER,
-                                          file_id INTEGER, release_id INTEGER) ''' }
+                                          file_id INTEGER, release_id INTEGER, bug INTEGER)'''}
 # Does the table exist query
 TABLE_EXIST_STMT = "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
 
 # Insert statements
-INSERT_FILE_NAME = 'INSERT INTO metrics_files (file_name) VALUES(?)'
-INSERT_RELEASE   = 'INSERT INTO metrics_releases (release_name) VALUES (?)'
-INSERT_CHANGES   = 'INSERT INTO metrics_changes (delta, total_lines, percent_change, file_id, release_id) VALUES (?,?,?,?,?)'
+INSERT_FILE_NAME  = 'INSERT INTO metrics_files (file_name) VALUES(?)'
+UPDATE_AVG_CHANGE = 'UPDATE metrics_files SET avg_change = ? WHERE  file_id = ?,  (?,?)'
+INSERT_RELEASE    = 'INSERT INTO metrics_releases (release_name) VALUES (?)'
+INSERT_CHANGES    = 'INSERT INTO metrics_changes (delta, total_lines, percent_change, file_id, release_id, bug) VALUES (?,?,?,?,?,?)'
 
 # Could not get this to parameterize properly with ?'s
 DROP_TABLE_STMT = "DROP TABLE %s"
@@ -40,8 +41,11 @@ GET_CHANGE_PER_FILE = 'SELECT metrics_files.file_name, metrics_releases.release_
 GET_RELEASE_ID = 'SELECT release_id FROM metrics_releases WHERE release_name = ?' 
 GET_FILE_ID    = 'SELECT file_id FROM metrics_files WHERE file_name = ?' 
 
-GET_RELEASES = 'SELECT release_id, release_name FROM metrics_releases ORDER BY release_id'
-GET_FILES    = 'SELECT file_id, file_name FROM metrics_files ORDER BY file_id'
+GET_RELEASES   = 'SELECT release_id, release_name FROM metrics_releases ORDER BY release_id'
+GET_RELEASE_IDS = 'SELECT release_id FROM metrics_releases ORDER BY release_id'
+GET_FILES      = 'SELECT file_id, file_name FROM metrics_files ORDER BY file_id'
+GET_FILE_IDS   = 'SELECT file_id FROM metrics_files ORDER BY file_id'
+
 
 class SQLiteBackend(object):
 
@@ -106,10 +110,10 @@ class SQLiteBackend(object):
     # Data Functions
     # Add data to tables
     # Get Data from tables
-    def add_change_values(self,file_id,release_id, delta, total_lines, percent_change):
+    def add_change_values(self,file_id,release_id, delta, total_lines, percent_change, bug):
         # Add entry to the METRICS_CHANGES table
         c = self._dbconn.cursor()
-        self._run_execute(c, INSERT_CHANGES , [delta, total_lines, percent_change, file_id, release_id])
+        self._run_execute(c, INSERT_CHANGES , [delta, total_lines, percent_change, file_id, release_id, bug])
         self._dbconn.commit()
  
     def add_file_values(self, file_name):
@@ -143,12 +147,28 @@ class SQLiteBackend(object):
         c = self._run_execute(c, GET_FILES)
         return c.fetchall()
 
+    def get_file_ids(self):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c, GET_FILE_IDS)
+        return c.fetchall()
+
     def get_releases(self):
         c = self._dbconn.cursor()
         c = self._run_execute(c, GET_RELEASES)
+        return c.fetchall()
+
+    def get_release_ids(self):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c, GET_RELEASE_IDS)
         return c.fetchall()
 
     def get_changes_by_file(self, file_id):
         c = self._dbconn.cursor()
         c = self._run_execute(c, GET_CHANGE_PER_FILE, [file_id])
         return c.fetchall()
+
+    def update_avg_change(self, file_id, change_rate):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c, UPDATE_AVG_CHANGE, [change_rate, file_id])
+        self._dbconn.commit()
+       
