@@ -55,7 +55,11 @@ def _parse_data():
         for i in h:
           fileName, fileExtension = os.path.splitext(h[i]['file'])
           if  ( fileExtension in file_exts):
-              percent_change =  ( ( float( h[i]['lines_added']) + float( h[i]['lines_removed'] )) / float(h[i]['lines_total'] ) ) * 100
+              if (float(h[i]['lines_total']) > 0):
+                  percent_change =  ( ( float( h[i]['lines_added']) + float( h[i]['lines_removed'] )) / float(h[i]['lines_total'] ) ) * 100
+              else:
+                  percent_change = -1
+
               if percent_change > 100:
                   percent_change = 100
               if i not in output:
