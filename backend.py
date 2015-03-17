@@ -13,7 +13,7 @@ METRICS_CHANGES            = 'metrics_changes'
 create_table_stmts = {METRICS_RELEASE_TABLE_NAME: '''CREATE TABLE metrics_releases(release_name VARCHAR(100), 
                                            release_id INTEGER PRIMARY KEY)''',
                       METRICS_FILE_LIST: '''CREATE TABLE metrics_files(file_name VARCHAR(250),
-                                            file_id INTEGER PRIMARY KEY, mean INTEGER stdev INTEGER)''',
+                                            file_id INTEGER PRIMARY KEY, mean INTEGER, stdev INTEGER)''',
                       METRICS_CHANGES: '''CREATE TABLE metrics_changes(delta INTEGER, total_lines INTEGER, percent_change INTEGER,
                                           file_id INTEGER, release_id INTEGER, bug INTEGER)'''}
 # Does the table exist query
