@@ -101,19 +101,6 @@ def parse_data():
             else:
                 _backend.add_change_values(file_id[0][0],release_ids[release] , 0 , 0, 0, 0 )
         
-    # Calculate average change per release
-    # foreach file
-    all_files = _backend.get_file_ids()
-    all_releases = _backend.get_release_ids()
-    foreach ( all_files as file_id ):
-        foreach ( all_releases as release_id):
-            # query each record from release_changes that match file id and release id
-            change_rate  = get_changes_by_file(file_id)
-            foreach ( change_rate as row ):
-                change_data['release'] = row['release_name']
-                change_data['release']['change'] =  row['percent_change']
-                pprint.pprint(row)
-                pprint.pprint(change_rate)
 
 def process_data(self):
     # Calculate average change per release
