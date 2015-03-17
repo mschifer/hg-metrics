@@ -13,7 +13,7 @@ METRICS_CHANGES            = 'metrics_changes'
 create_table_stmts = {METRICS_RELEASE_TABLE_NAME: '''CREATE TABLE metrics_releases(release_name VARCHAR(100), 
                                            release_id INTEGER PRIMARY KEY)''',
                       METRICS_FILE_LIST: '''CREATE TABLE metrics_files(file_name VARCHAR(250),
-                                            file_id INTEGER PRIMARY KEY, avg_change INTEGER)''',
+                                            file_id INTEGER PRIMARY KEY, mean INTEGER stdev INTEGER)''',
                       METRICS_CHANGES: '''CREATE TABLE metrics_changes(delta INTEGER, total_lines INTEGER, percent_change INTEGER,
                                           file_id INTEGER, release_id INTEGER, bug INTEGER)'''}
 # Does the table exist query
@@ -21,7 +21,7 @@ TABLE_EXIST_STMT = "SELECT name FROM sqlite_master WHERE type='table' AND name=?
 
 # Insert statements
 INSERT_FILE_NAME  = 'INSERT INTO metrics_files (file_name) VALUES(?)'
-UPDATE_AVG_CHANGE = 'UPDATE metrics_files SET avg_change = ? WHERE  file_id = ?,  (?,?)'
+UPDATE_AVG_CHANGE = 'UPDATE metrics_files SET ( mean = ?, stdev = ?)  WHERE  file_id = ?,  (?,?,?)'
 INSERT_RELEASE    = 'INSERT INTO metrics_releases (release_name) VALUES (?)'
 INSERT_CHANGES    = 'INSERT INTO metrics_changes (delta, total_lines, percent_change, file_id, release_id, bug) VALUES (?,?,?,?,?,?)'
 
@@ -34,9 +34,12 @@ GET_ALL_CHANGE_PER_FILES = 'SELECT metrics_files.file_name, metrics_releases.rel
                       'WHERE metrics_files.file_id = metrics_changes.file_id and metrics_releases.release_id = metrics_changes.release_Id ' \
                       'ORDER BY  metrics_changes.file_id,metrics_changes.release_id'
 
-GET_CHANGE_PER_FILE = 'SELECT metrics_files.file_name, metrics_releases.release_name, metrics_changes.percent_change ' \
+GET_CHANGE_PER_FILE = 'SELECT metrics_files.file_name, metrics_releases.release_name, ' \
+                      'metrics_changes.release_id, metrics_changes.percent_change ' \
                       'FROM metrics_files, metrics_releases, metrics_changes ' \
-                      'WHERE metrics_files.file_id = metrics_changes.file_id AND metrics_releases.release_id = metrics_changes.release_Id AND metrics_changes.file_id =  ? ' \
+                      'WHERE metrics_files.file_id = metrics_changes.file_id ' \
+                      'AND metrics_releases.release_id = metrics_changes.release_Id ' \
+                      'AND metrics_changes.file_id =  ? ' \
                       'ORDER BY metrics_changes.release_id'
 GET_RELEASE_ID = 'SELECT release_id FROM metrics_releases WHERE release_name = ?' 
 GET_FILE_ID    = 'SELECT file_id FROM metrics_files WHERE file_name = ?' 
@@ -167,8 +170,8 @@ class SQLiteBackend(object):
         c = self._run_execute(c, GET_CHANGE_PER_FILE, [file_id])
         return c.fetchall()
 
-    def update_avg_change(self, file_id, change_rate):
+    def update_avg_change(self, file_id, mean, stdev):
         c = self._dbconn.cursor()
-        c = self._run_execute(c, UPDATE_AVG_CHANGE, [change_rate, file_id])
+        c = self._run_execute(c, UPDATE_AVG_CHANGE, [mean, stdev, file_id])
         self._dbconn.commit()
        

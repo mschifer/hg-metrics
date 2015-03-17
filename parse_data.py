@@ -9,7 +9,7 @@ import pprint
 
 branch_list = ""
 
-def _parse_data():
+def parse_data():
 
     list = []
     file_exts = ['.cpp','.h','.xml','.js','.css','.java','.jsm','.json','.xhtml','.html','.c','.asm','.idl','.xul',]
@@ -103,19 +103,63 @@ def _parse_data():
         
     # Calculate average change per release
     # foreach file
-    #all_files = _backend.get_file_ids()
-    #all_releases = _backend.get_release_ids()
-    #foreach ( all_files as file_id ):
-    #    foreach ( all_releases as release_id):
-    #        # query each record from release_changes that match file id and release id
-    #        change_rate  = get_changes_by_file(file_id)
-    #        foreach ( change_rate as row ):
-    #            pprint.pprint(row)
-    #
-    ##for i in h:
-    ##    if (h[i]['file'].count('/') <=3 and (h[i]['file'].count('.') == 0)):
-    ##        ofp.write("%s,%d,%d\n" % (h[i]['file'], h[i]['lines_added'], h[i]['lines_removed']))
-    #
+    all_files = _backend.get_file_ids()
+    all_releases = _backend.get_release_ids()
+    foreach ( all_files as file_id ):
+        foreach ( all_releases as release_id):
+            # query each record from release_changes that match file id and release id
+            change_rate  = get_changes_by_file(file_id)
+            foreach ( change_rate as row ):
+                change_data['release'] = row['release_name']
+                change_data['release']['change'] =  row['percent_change']
+                pprint.pprint(row)
+                pprint.pprint(change_rate)
+
+def process_data(self):
+    # Calculate average change per release
+    # foreach file
+    all_files = _backend.get_file_ids()
+    all_releases = _backend.get_release_ids()
+    for file_id in  all_files:
+        #print "FILE ID"
+        #pprint.pprint(file_id[0])
+        change_rate  = _backend.get_changes_by_file(file_id[0])
+        change_data = dict();
+        file_data = dict()
+        change_list = []
+        release_id = 0;
+        for row in  change_rate:
+                release_id = row[2]
+                file_data[release_id] = row[3]
+                #pprint.pprint(file_data)
+                change_list.append(row[3])
+        change_data[file_id[0]] = file_data;
+        pprint.pprint(change_data)
+        mean,stdev = meanstdv(change_list) 
+        print 'FILE ID:', file_id[0], ' STDV:', meanstdv(change_list), ' MAX CHANGE:', max(change_list) 
+        _backend.update_avg_change(file_id[0], mean, stdev)
+        if ( max(change_list)  > (mean + stdev) ):
+            for  rel_id, change  in change_data[file_id[0]].items() :
+                if change == max(change_list):
+                   print 'HIGH CHANGE RATE for file ', file_id[0], ' in release ', rel_id
+
+"""
+Calculate mean and standard deviation of data x[]:
+    mean = {\sum_i x_i \over n}
+    std = sqrt(\sum_i (x_i - mean)^2 \over n-1)
+"""
+def meanstdv(x):
+    from math import sqrt
+    n, mean, std = len(x), 0, 0
+    for a in x:
+	mean = mean + a
+    mean = mean / float(n)
+    for a in x:
+	std = std + (a - mean)**2
+    std = sqrt(std / float(n-1))
+    return mean, std
+
+############################################
 
 # Main 
 if __name__ == '__main__':
@@ -128,4 +172,5 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-b", action='store', dest="branch_list",  help="File containing branch list")
     args = parser.parse_args()
-    _parse_data()
+    parse_data()
+    process_data()
