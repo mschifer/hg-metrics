@@ -43,7 +43,7 @@ GET_CHANGE_PER_FILE = 'SELECT metrics_files.file_name, metrics_releases.release_
                       'ORDER BY metrics_changes.release_id'
 GET_RELEASE_ID = 'SELECT release_id FROM metrics_releases WHERE release_name = ?' 
 GET_FILE_ID    = 'SELECT file_id FROM metrics_files WHERE file_name = ?' 
-GET_COMMIT_ID  = 'SELECT commit_id from metrics_changes where commit_id = ? '
+GET_COMMIT_ID  = 'SELECT commit_id from metrics_changes where commit_id = ? AND file_id = ?'
 GET_RELEASES   = 'SELECT release_id, release_name FROM metrics_releases ORDER BY release_id'
 GET_RELEASE_IDS = 'SELECT release_id FROM metrics_releases ORDER BY release_id'
 GET_FILES      = 'SELECT file_id, file_name FROM metrics_files ORDER BY file_id'
@@ -71,11 +71,11 @@ class SQLiteBackend(object):
                 print "WARNING: Getting new cursor"
                 cursor = self._dbconn.cursor()
             if queryparams:
-                print query
-                print queryparams
-                print '--'
+                #print query
+                #print queryparams
+                #print '--'
                 cursor.execute(query, queryparams)
-                print 'TOTAL CHANGES:', self._dbconn.total_changes;
+                #print 'TOTAL CHANGES:', self._dbconn.total_changes;
             else:
                 cursor.execute(query)
         except:
@@ -142,14 +142,12 @@ class SQLiteBackend(object):
         c = self._run_execute(c, GET_FILE_ID, [file_name])
         return c.fetchall()
 
-    def get_commit_id(self, commit_id):
+    def get_commit_id(self, commit_id, file_id):
         c = self._dbconn.cursor()
-        c = self._run_execute(c, GET_COMMIT_ID, [commit_id])
+        c = self._run_execute(c, GET_COMMIT_ID, [commit_id, file_id])
         return c.fetchall()
 
     def get_release_id(self, release_name):
-        print 'Get Release ID: %s' % release_name
-        print  GET_RELEASE_ID, [release_name]
         c = self._dbconn.cursor()
         c = self._run_execute(c, GET_RELEASE_ID, [release_name])
         return c.fetchall()
@@ -182,6 +180,5 @@ class SQLiteBackend(object):
     def update_avg_change(self, file_id, mean, stdev):
         c = self._dbconn.cursor()
         c = self._run_execute(c, UPDATE_AVG_CHANGE, (mean, stdev, file_id))
-        print 'C:', c
         self._dbconn.commit()
        
