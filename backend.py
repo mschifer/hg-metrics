@@ -15,15 +15,15 @@ create_table_stmts = {METRICS_RELEASE_TABLE_NAME: '''CREATE TABLE metrics_releas
                       METRICS_FILE_LIST: '''CREATE TABLE metrics_files(file_name VARCHAR(250),
                                             file_id INTEGER PRIMARY KEY, mean INTEGER, stdev INTEGER)''',
                       METRICS_CHANGES: '''CREATE TABLE metrics_changes(delta INTEGER, total_lines INTEGER, percent_change INTEGER,
-                                          file_id INTEGER, release_id INTEGER, bug INTEGER)'''}
+                                          file_id INTEGER, release_id INTEGER, bug INTEGER, commit_id VARCHAR(100) )'''}
 # Does the table exist query
 TABLE_EXIST_STMT = "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
 
 # Insert statements
 INSERT_FILE_NAME  = 'INSERT INTO metrics_files (file_name) VALUES(?)'
-UPDATE_AVG_CHANGE = 'UPDATE metrics_files SET ( mean = ?, stdev = ?)  WHERE  file_id = ?,  (?,?,?)'
+UPDATE_AVG_CHANGE = 'UPDATE metrics_files SET  mean = ?, stdev = ?  WHERE file_id = ? '
 INSERT_RELEASE    = 'INSERT INTO metrics_releases (release_name) VALUES (?)'
-INSERT_CHANGES    = 'INSERT INTO metrics_changes (delta, total_lines, percent_change, file_id, release_id, bug) VALUES (?,?,?,?,?,?)'
+INSERT_CHANGES    = 'INSERT INTO metrics_changes (delta, total_lines, percent_change, file_id, release_id, bug, commit_id) VALUES (?,?,?,?,?,?,?)'
 
 # Could not get this to parameterize properly with ?'s
 DROP_TABLE_STMT = "DROP TABLE %s"
@@ -43,7 +43,7 @@ GET_CHANGE_PER_FILE = 'SELECT metrics_files.file_name, metrics_releases.release_
                       'ORDER BY metrics_changes.release_id'
 GET_RELEASE_ID = 'SELECT release_id FROM metrics_releases WHERE release_name = ?' 
 GET_FILE_ID    = 'SELECT file_id FROM metrics_files WHERE file_name = ?' 
-
+GET_COMMIT_ID  = 'SELECT commit_id from metrics_changes where commit_id = ? '
 GET_RELEASES   = 'SELECT release_id, release_name FROM metrics_releases ORDER BY release_id'
 GET_RELEASE_IDS = 'SELECT release_id FROM metrics_releases ORDER BY release_id'
 GET_FILES      = 'SELECT file_id, file_name FROM metrics_files ORDER BY file_id'
@@ -71,7 +71,11 @@ class SQLiteBackend(object):
                 print "WARNING: Getting new cursor"
                 cursor = self._dbconn.cursor()
             if queryparams:
+                print query
+                print queryparams
+                print '--'
                 cursor.execute(query, queryparams)
+                print 'TOTAL CHANGES:', self._dbconn.total_changes;
             else:
                 cursor.execute(query)
         except:
@@ -113,10 +117,10 @@ class SQLiteBackend(object):
     # Data Functions
     # Add data to tables
     # Get Data from tables
-    def add_change_values(self,file_id,release_id, delta, total_lines, percent_change, bug):
+    def add_change_values(self,file_id,release_id, delta, total_lines, percent_change, bug, commit_id):
         # Add entry to the METRICS_CHANGES table
         c = self._dbconn.cursor()
-        self._run_execute(c, INSERT_CHANGES , [delta, total_lines, percent_change, file_id, release_id, bug])
+        self._run_execute(c, INSERT_CHANGES , [delta, total_lines, percent_change, file_id, release_id, bug, commit_id])
         self._dbconn.commit()
  
     def add_file_values(self, file_name):
@@ -136,6 +140,11 @@ class SQLiteBackend(object):
     def get_file_id(self, file_name):
         c = self._dbconn.cursor()
         c = self._run_execute(c, GET_FILE_ID, [file_name])
+        return c.fetchall()
+
+    def get_commit_id(self, commit_id):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c, GET_COMMIT_ID, [commit_id])
         return c.fetchall()
 
     def get_release_id(self, release_name):
@@ -172,6 +181,7 @@ class SQLiteBackend(object):
 
     def update_avg_change(self, file_id, mean, stdev):
         c = self._dbconn.cursor()
-        c = self._run_execute(c, UPDATE_AVG_CHANGE, [mean, stdev, file_id])
+        c = self._run_execute(c, UPDATE_AVG_CHANGE, (mean, stdev, file_id))
+        print 'C:', c
         self._dbconn.commit()
        

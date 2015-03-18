@@ -10,7 +10,7 @@ import pprint
 branch_list = ""
 
 def parse_data():
-
+    global _backend
     list = []
     file_exts = ['.cpp','.h','.xml','.js','.css','.java','.jsm','.json','.xhtml','.html','.c','.asm','.idl','.xul',]
     
@@ -18,7 +18,6 @@ def parse_data():
     
     f = open(args.branch_list, 'r')
     
-    _backend = SQLiteBackend()
     
     
     for line in f:
@@ -48,7 +47,7 @@ def parse_data():
                         bugnumber = history[i]["bug"]
                     else:
                         bugnumber = 0;
-                    ch.add_file_path(j["filename"], j["added"], j["removed"], num_lines, bugnumber)
+                    ch.add_file_path(i, j["filename"], j["added"], j["removed"], num_lines, bugnumber)
     
     
         h = ch.get_hash()
@@ -66,6 +65,7 @@ def parse_data():
                  output[i] = {}
               if release not in output[i]:
                  output[i][release] = {}
+              output[i][release]['commit_id'] = h[i]['commit_id']
               output[i][release]['delta'] = h[i]['lines_added'] + h[i]['lines_removed']
               output[i][release]['percent'] = percent_change
               output[i][release]['lines_total'] = h[i]['lines_total']
@@ -95,14 +95,24 @@ def parse_data():
             
             # add the file data for this release
             if release in output[i]: 
-                _backend.add_change_values(file_id[0][0], release_ids[release], 
-                    output[i][release]['delta'] , output[i][release]['lines_total'], 
-                    output[i][release]['percent'], output[i][release]['bug'])
+                # Check if commit has been added yet or not
+                commits = _backend.get_commit_id(output[i][release]['commit_id'])
+                print 'COMMITS'
+                pprint.pprint(commits)
+                if len(commits) == 0:
+                    _backend.add_change_values(file_id[0][0], release_ids[release], 
+                        output[i][release]['delta'] , output[i][release]['lines_total'], 
+                        output[i][release]['percent'], output[i][release]['bug'], output[i][release]['commit_id'])
+                else:
+                    print 'Commit ID: ', output[i][release]['commit_id'], ' Already Processed - SKIPPING'
+
+
             else:
-                _backend.add_change_values(file_id[0][0],release_ids[release] , 0 , 0, 0, 0 )
+                _backend.add_change_values(file_id[0][0],release_ids[release] , 0 , 0, 0, 0, 0 )
         
 
-def process_data(self):
+def process_data():
+    global _backend
     # Calculate average change per release
     # foreach file
     all_files = _backend.get_file_ids()
@@ -121,14 +131,25 @@ def process_data(self):
                 #pprint.pprint(file_data)
                 change_list.append(row[3])
         change_data[file_id[0]] = file_data;
+        print "==============================================="
         pprint.pprint(change_data)
+        print "==="
+        pprint.pprint(change_list)
+        print "==============================================="
         mean,stdev = meanstdv(change_list) 
-        print 'FILE ID:', file_id[0], ' STDV:', meanstdv(change_list), ' MAX CHANGE:', max(change_list) 
+        print 'FILE ID:', file_id[0]
+        print 'MEAN   :', mean
+        print 'STDEV  :', stdev
+        
         _backend.update_avg_change(file_id[0], mean, stdev)
-        if ( max(change_list)  > (mean + stdev) ):
-            for  rel_id, change  in change_data[file_id[0]].items() :
-                if change == max(change_list):
-                   print 'HIGH CHANGE RATE for file ', file_id[0], ' in release ', rel_id
+        if len(change_list) == 0:
+            print 'Change List is NULL'
+        else:
+            print 'FILE ID:', file_id[0], ' STDV:', meanstdv(change_list), ' MAX CHANGE:', max(change_list) 
+            if ( max(change_list)  > (mean + stdev) ):
+                for  rel_id, change  in change_data[file_id[0]].items() :
+                    if change == max(change_list):
+                       print 'HIGH CHANGE RATE for file ', file_id[0], ' in release ', rel_id
 
 """
 Calculate mean and standard deviation of data x[]:
@@ -138,11 +159,15 @@ Calculate mean and standard deviation of data x[]:
 def meanstdv(x):
     from math import sqrt
     n, mean, std = len(x), 0, 0
+    if n == 0:
+        return 0,0
     for a in x:
 	mean = mean + a
     mean = mean / float(n)
     for a in x:
 	std = std + (a - mean)**2
+    if n == 1:
+       return mean,0
     std = sqrt(std / float(n-1))
     return mean, std
 
@@ -159,5 +184,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-b", action='store', dest="branch_list",  help="File containing branch list")
     args = parser.parse_args()
+    _backend = SQLiteBackend()
     parse_data()
     process_data()
