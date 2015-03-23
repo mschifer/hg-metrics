@@ -81,16 +81,13 @@ def parse_data():
                         commit_list  = _backend.get_commit_id(commit_id, file_id[0])
                         if len(commit_list) == 0:
                             
+                            bugnumber  = 0;
+                            is_backout = 0;
+                            num_lines  = 1 
                             if os.path.isfile(local_file_path):
                                 num_lines = sum(1 for line in open(local_file_path))
-                            else:
-                                num_lines = 1 
                             if ("bug" in history[commit_id].keys()):
                                 bugnumber = history[commit_id]["bug"]
-                            else:
-                                bugnumber = 0;
-        
-                            is_backout = 0;
                             if ("is_backout" in history[commit_id].keys()):
                                 if history[commit_id]["is_backout"]:
                                     is_backout  = 1
@@ -207,5 +204,5 @@ if __name__ == '__main__':
     parser.add_argument("-b", action='store', dest="branch_list",  help="File containing branch list")
     args = parser.parse_args()
     _backend = SQLiteBackend()
-    #parse_data()
+    parse_data()
     process_data()
