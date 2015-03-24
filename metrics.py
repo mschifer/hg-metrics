@@ -9,6 +9,7 @@ import os
 import re
 import time, datetime
 import json
+import pprint
 
 cmdtable = {}
 command = cmdutil.command(cmdtable)
@@ -79,6 +80,7 @@ def get_lines_and_files(ui, repo, ctx1, ctx2, fns):
             # If we have anything in currentfile, append to list
             if currentfile:
                 files.append(currentfile)
+                print '%s  A: %s R:%s' % (currentfile['filename'], currentfile['added'] ,currentfile['removed'])
                 currentfile = {}
 
             # This is the first line of a file set current file

@@ -16,8 +16,8 @@ create_table_stmts = {METRICS_RELEASE_TABLE_NAME: '''CREATE TABLE metrics_releas
                       METRICS_FILE_LIST_TABLE_NAME: '''CREATE TABLE metrics_files(file_name VARCHAR(250),
                                             file_id INTEGER PRIMARY KEY, mean INTEGER, stdev INTEGER)''',
                       METRICS_CHANGES_TABLE_NAME: '''CREATE TABLE metrics_changes(delta INTEGER, total_lines INTEGER, percent_change INTEGER,
-                                          file_id INTEGER, release_id INTEGER, bug INTEGER, commit_id VARCHAR(100), is_backout INTEGER )''',
-                      METRICS_SUMMARY_TABLE_NAME: '''CREATE TABLE metrics_summary(release_id INTEGER, file_id INTEGER, percent_change INTEGER)'''}
+                                          file_id INTEGER, release_id INTEGER, bug VARCHAR(8), commit_id VARCHAR(100), is_backout INTEGER )''',
+                      METRICS_SUMMARY_TABLE_NAME: '''CREATE TABLE metrics_summary(release_id INTEGER, file_id INTEGER, percent_change INTEGER, bugs VARCHAR(100))'''}
 # Does the table exist query
 TABLE_EXIST_STMT = "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
 
@@ -25,12 +25,12 @@ TABLE_EXIST_STMT = "SELECT name FROM sqlite_master WHERE type='table' AND name=?
 INSERT_FILE_NAME  = 'INSERT INTO metrics_files (file_name) VALUES(?)'
 INSERT_RELEASE    = 'INSERT INTO metrics_releases (release_name) VALUES (?)'
 INSERT_CHANGES    = 'INSERT INTO metrics_changes (delta, total_lines, percent_change, file_id, release_id, bug, commit_id, is_backout) VALUES (?,?,?,?,?,?,?,?)'
-INSERT_SUMMARY    = 'INSERT INTO metrics_summary (release_id, file_id, percent_change) VALUES (?,?,?)'
+INSERT_SUMMARY    = 'INSERT INTO metrics_summary (release_id, bugs, file_id, percent_change) VALUES (?,?,?,?)'
 
 # Update statements
 UPDATE_AVG_CHANGE      = 'UPDATE metrics_files SET  mean = ?, stdev = ?  WHERE file_id = ?'
 UPDATE_PERCENT_CHANGE  = 'UPDATE metrics_changes SET percent_change= ?  WHERE file_id = ? and commit_id = ?'
-UPDATE_SUMMARY         = 'UPDATE metrics_summary SET percent_change = ? WHERE release_id = ? AND file_id = ?'
+UPDATE_SUMMARY         = 'UPDATE metrics_summary SET percent_change = ?, bugs = ?  WHERE release_id = ? AND file_id = ?'
 
 # Could not get this to parameterize properly with ?'s
 DROP_TABLE_STMT = "DROP TABLE %s"
@@ -58,7 +58,7 @@ GET_FILES      = 'SELECT file_id, file_name FROM metrics_files ORDER BY file_id'
 GET_FILE_IDS   = 'SELECT file_id FROM metrics_files ORDER BY file_id'
 GET_CHANGE_DATA= 'SELECT total_lines, delta, percent_change, file_id, release_id, bug, commit_id ' \
                  'FROM metrics_changes WHERE file_id = ?'
-GET_CHANGE_PER_FILE_RELEASE  = 'SELECT file_id, total_lines, delta, percent_change, commit_id FROM metrics_changes ' \
+GET_CHANGE_PER_FILE_RELEASE  = 'SELECT file_id, total_lines, delta, percent_change, commit_id, bug FROM metrics_changes ' \
                      'WHERE file_id = ? AND release_id = ? '
                  
 GET_SUMMARY_DATA = 'SELECT release_id, file_id, percent_change FROM metrics_summary WHERE release_id = ? AND file_id = ?'
@@ -212,14 +212,14 @@ class SQLiteBackend(object):
         c = self._run_execute(c, UPDATE_PERCENT_CHANGE, (percent_change, file_id, commit_id))
         self._dbconn.commit()
 
-    def add_summary_data(self, release_id, file_id, percent_change):
+    def add_summary_data(self, release_id, file_id, percent_change, bugs):
         c = self._dbconn.cursor()
-        c = self._run_execute(c, INSERT_SUMMARY, (release_id, file_id, percent_change))
+        c = self._run_execute(c, INSERT_SUMMARY, (release_id, bugs, file_id, percent_change))
         self._dbconn.commit()
 
-    def update_summary_data(self, release_id, file_id, percent_change):
+    def update_summary_data(self, release_id, file_id, percent_change, bugs):
         c = self._dbconn.cursor()
-        c = self._run_execute(c, UPDATE_SUMMARY, (release_id, file_id, percent_change))
+        c = self._run_execute(c, UPDATE_SUMMARY, (release_id, bugs, file_id, percent_change))
         self._dbconn.commit()
 
     def get_summary_data(self, release_id, file_id):
