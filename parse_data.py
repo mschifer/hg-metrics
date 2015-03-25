@@ -93,7 +93,7 @@ def parse_data():
                             commit_list  = _backend.get_commit_id(commit_id, file_id[0])
                             if len(commit_list) == 0:
                                 
-                                bugnumber  = 0;
+                                bugnumber  = '';
                                 is_backout = 0;
                                 num_lines  = 1 
                                 if os.path.isfile(local_file_path):
@@ -102,6 +102,8 @@ def parse_data():
                                     # File not found - skip it.
                                     print 'File Not Found in current repository - SKIPPING', local_file_path
                                     continue
+                                if num_lines == 0:
+                                   num_lines = 1
                                 if ("bug" in history[commit_id].keys()):
                                     bugnumber = history[commit_id]["bug"]
                                 if ("is_backout" in history[commit_id].keys()):
@@ -109,7 +111,7 @@ def parse_data():
                                         is_backout  = 1
             
                                 delta = file_data["added"] +  file_data["removed"]
-                                percent_change = float((float(delta) /  float(num_lines)) * 100)
+                                percent_change = float("{0:.2f}".format((float(delta) /  float(num_lines)) * 100))
             
                                 _backend.add_change_values(file_id[0], rel_id,  
                                                            delta, num_lines, percent_change,  
@@ -142,7 +144,7 @@ def process_release(release_id):
             total_delta += row[2]
             if len(row[5]) > 0:
                 bugs += '%s,' % row[5]
-        total_percent = float((float(total_delta) / float(total_lines )) * 100)
+                total_percent = float("{0:.2f}".format((float(total_delta) / float(total_lines)) * 100))
         summary = _backend.get_summary_data(release_id, file_id)
         if summary == None:
             _backend.add_summary_data(release_id, file_id, total_percent, bugs)
@@ -179,6 +181,8 @@ def process_data():
                 change_list.append(0)
         # Calculate rate of change
         mean,stdev = meanstdv(change_list) 
+        mean  = float("{0:.2f}".format(mean))
+        stdev = float("{0:.2f}".format(stdev))
         _backend.update_avg_change(file_id, mean, stdev)
 
         if len(change_list) == 0:
