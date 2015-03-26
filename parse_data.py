@@ -33,11 +33,11 @@ def parse_data():
     for line in f:
         branch, path  = line.rstrip().split(' ',1)
         if branch.find('nightly') > -1:
-           nightly[branch] = path
+           nightly[branch] = path.lstrip()
         if branch.find('aurora') > -1:
-           aurora[branch] = path
+           aurora[branch] = path.lstrip()
         if branch.find('beta') > -1:
-           beta[branch] =  path
+           beta[branch] =  path.lstrip()
 
     list.append(nightly)
     list.append(aurora)
@@ -100,7 +100,7 @@ def parse_data():
                                     num_lines = sum(1 for line in open(local_file_path))
                                 else:
                                     # File not found - skip it.
-                                    print 'File Not Found in current repository - SKIPPING', local_file_path
+                                    print 'File Not Found in current repository - SKIPPING %s' % local_file_path
                                     continue
                                 if num_lines == 0:
                                    num_lines = 1
@@ -126,7 +126,7 @@ def parse_data():
 
 
 def process_release(release_id):
-    global _backendA
+    global _backend
 
     print 'Processing Release :', release_id
     # Calculate average change per release for each file
@@ -134,17 +134,17 @@ def process_release(release_id):
     for file in all_files:
         file_id = file[0]
         total_delta = 0
-        total_lines = 0
+        total_lines = 1
         bugs = ''
         print 'Processing File ID:', file_id
         file_commits = _backend.get_changes_by_file_release(file_id, release_id)
         for row in file_commits:
-            pprint.pprint(row)
             total_lines    = row[1]
             total_delta += row[2]
             if len(row[5]) > 0:
-                bugs += '%s,' % row[5]
-                total_percent = float("{0:.2f}".format((float(total_delta) / float(total_lines)) * 100))
+                if bugs.find(row[5]) < 0
+                    bugs += '%s,' % row[5]
+        total_percent = float("{0:.2f}".format((float(total_delta) / float(total_lines)) * 100))
         summary = _backend.get_summary_data(release_id, file_id)
         if summary == None:
             _backend.add_summary_data(release_id, file_id, total_percent, bugs)
@@ -160,7 +160,6 @@ def process_data():
     for file in  all_files:
         file_id = file[0]
         summary = _backend.get_all_summary_data(file_id)
-        pprint.pprint(summary)
         change_list = []
         file_data = dict()
 
@@ -185,14 +184,14 @@ def process_data():
         stdev = float("{0:.2f}".format(stdev))
         _backend.update_avg_change(file_id, mean, stdev)
 
-        if len(change_list) == 0:
-            print 'Change List is NULL'
-        else:
-            print 'FILE ID:', file_id, ' STDV:', meanstdv(change_list), ' MAX CHANGE:', max(change_list) 
-            if ( max(change_list)  > (mean + stdev) ):
-                for rel_id,change_rate in file_data.items():
-                    if change_rate == max(change_list):
-                        print 'File ID:', file_id, ' High Change Rate ', change_rate,  ' in Release ', rel_id 
+#        if len(change_list) == 0:
+#            print 'Change List is NULL'
+#        else:
+#            print 'FILE ID:', file_id, ' STDV:', meanstdv(change_list), ' MAX CHANGE:', max(change_list) 
+#            if ( max(change_list)  > (mean + stdev) ):
+#                for rel_id,change_rate in file_data.items():
+#                    if change_rate == max(change_list):
+#                        print 'File ID:', file_id, ' High Change Rate ', change_rate,  ' in Release ', rel_id 
 
 """
 Calculate mean and standard deviation of data x[]:
