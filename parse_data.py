@@ -6,6 +6,7 @@ from array import *
 from churnhash2 import ChurnHash
 from backend import SQLiteBackend
 import pprint
+import re
 
 # Branchlist format is:
 # release-name /path/to/branchsource
@@ -24,7 +25,7 @@ def parse_data():
     aurora  = {}
     beta    = {}
     file_exts = ['.cpp','.h','.xml','.js','.css','.java','.jsm','.json','.xhtml','.html','.c','.asm','.idl','.xul',]
-    file_ignores = ['test','gaia.json']
+    file_ignores = ['test','gaia.json','sources.xml']
     
     
     
@@ -52,12 +53,12 @@ def parse_data():
             # Make sure we have the release in our list and assigned a release id
             rels =  _backend.get_release_id(release)
             if len(rels) == 0:
-                print 'Release Not Found: Adding Release'
+                #print 'Release Not Found: Adding Release'
                 rels  =   _backend.add_release_values(release)
                 rel_id = rels[0][0]
             else:
                 rel_id = rels[0][0]
-            print 'RELID ', rel_id
+            #print 'RELID ', rel_id
             print 'opened file %s.json release id:%s'  % (release, rel_id)
     
             # Load the json file 
@@ -72,12 +73,12 @@ def parse_data():
                         ignore = False;
                         for exclude in file_ignores:
                             if file_data["filename"].find(exclude) > -1:
-                                print 'Ignoring files with ', exclude, '  - ', file_data["filename"]
+                                #print 'Ignoring files with ', exclude, '  - ', file_data["filename"]
                                 ignore = True; 
                                 break
                         if ignore:
                             continue
-                        print "Processing file: ", file_data["filename"]
+                        #print "Processing file: ", file_data["filename"]
                         local_file_path = "%s/%s" % (path,file_data["filename"])
     
                         fileName, fileExtension = os.path.splitext(file_data["filename"])
@@ -93,14 +94,18 @@ def parse_data():
                             commit_list  = _backend.get_commit_id(commit_id, file_id[0])
                             if len(commit_list) == 0:
                                 
-                                bugnumber  = '';
-                                is_backout = 0;
-                                num_lines  = 1 
+                                bugnumber      = ''
+                                is_backout     = 0
+                                num_lines      = 1 
+                                committer_name = ''
+                                reviewer       = ''
+                                approver       = ''
+                                msg            = ''
                                 if os.path.isfile(local_file_path):
                                     num_lines = sum(1 for line in open(local_file_path))
                                 else:
                                     # File not found - skip it.
-                                    print 'File Not Found in current repository - SKIPPING %s' % local_file_path
+                                    #print 'File Not Found in current repository - SKIPPING %s' % local_file_path
                                     continue
                                 if num_lines == 0:
                                    num_lines = 1
@@ -109,18 +114,26 @@ def parse_data():
                                 if ("is_backout" in history[commit_id].keys()):
                                     if history[commit_id]["is_backout"]:
                                         is_backout  = 1
+                                if ("approver" in history[commit_id].keys()):
+                                    approver = history[commit_id]["approver"]
+                                if ("reviewer" in history[commit_id].keys()):
+                                    reviewer = history[commit_id]["reviewer"]
+                                if ("committer_name" in history[commit_id].keys()):
+                                    committer_name = history[commit_id]["committer_name"]
+                                if ("msg" in history[commit_id].keys()):
+                                    msg = history[commit_id]["msg"]
             
                                 delta = file_data["added"] +  file_data["removed"]
                                 percent_change = float("{0:.2f}".format((float(delta) /  float(num_lines)) * 100))
             
                                 _backend.add_change_values(file_id[0], rel_id,  
                                                            delta, num_lines, percent_change,  
-                                                           bugnumber, commit_id, is_backout)
-                            else:
-                                print 'Commit ID: ', commit_id, ' Already Processed - SKIPPING'
+                                                           bugnumber, commit_id, is_backout, committer_name, reviewer, approver, msg)
+                            #else:
+                            #    print 'Commit ID: ', commit_id, ' Already Processed - SKIPPING'
             
-                        else:
-                            print 'Ignoring file with file extension ', fileExtension
+                        #else:
+                        #    print 'Ignoring file with file extension ', fileExtension
             process_release(rel_id)
 
 
@@ -136,20 +149,41 @@ def process_release(release_id):
         total_delta = 0
         total_lines = 1
         bugs = ''
-        print 'Processing File ID:', file_id
+        backout_count = 0
+        committers = ''
+        reviewers = ''
+        approvers = '' 
+        msgs      = ''
+
+        #print 'Processing File ID:', file_id
         file_commits = _backend.get_changes_by_file_release(file_id, release_id)
+        # 0 file_id, 1 total_lines, 2 delta, 3 percent_change, 4 commit_id, 5 bug, 6 is_backout, 7 committer_name, 8 reviewer, 9 approver, 10 msg 
+        total_commits = 0
         for row in file_commits:
+            total_commits += 1
             total_lines    = row[1]
-            total_delta += row[2]
+            total_delta   += row[2]
+            is_backout     = row[6]
+
             if len(row[5]) > 0:
-                if bugs.find(row[5]) < 0
+                # ignore duplicate bugs
+                if bugs.find(row[5]) < 0:
                     bugs += '%s,' % row[5]
+            if is_backout:
+                backout_count += 1 
+            if committers.find(row[7]) <0:
+                committers += '%s,' % row[7]
+            if reviewers.find(row[8]) <0:
+                reviewers  += '%s,' % row[8]
+            if approvers.find(row[9]) <0:
+                approvers  += '%s,' % row[9]
+            msgs += '%s) %s ' % (total_commits, re.sub(r'[^a-zA-Z0-9= ]', '',row[10]) )
         total_percent = float("{0:.2f}".format((float(total_delta) / float(total_lines)) * 100))
         summary = _backend.get_summary_data(release_id, file_id)
         if summary == None:
-            _backend.add_summary_data(release_id, file_id, total_percent, bugs)
+            _backend.add_summary_data(release_id, file_id, total_percent, bugs, backout_count, committers, reviewers, approvers, msgs, total_commits)
         else:
-            _backend.update_summary_data(release_id, file_id, total_percent, bugs)
+            _backend.update_summary_data(release_id, file_id, total_percent, bugs, backout_count, committers, reviewers, approvers, msgs, total_commits)
 
 
 def process_data():
