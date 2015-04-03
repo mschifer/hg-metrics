@@ -25,7 +25,8 @@ def parse_data():
     aurora  = {}
     beta    = {}
     file_exts = ['.cpp','.h','.xml','.js','.css','.java','.jsm','.json','.xhtml','.html','.c','.asm','.idl','.xul',]
-    file_ignores = ['test','gaia.json','sources.xml']
+    file_ignores = ['gaia.json','sources.xml']
+    #file_ignores = ['test','gaia.json','sources.xml']
     
     
     
