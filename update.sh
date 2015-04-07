@@ -1,24 +1,30 @@
 #!/bin/sh -x
 today=`date +%Y-%m-%d`
+cd /Users/mschifer
 start_dir=`pwd`
 
+cat /dev/null > $start_dir/hg-metrics/branchlist
 for branch in beta aurora nightly
 do 
     if [ $branch  == 'nightly' ]
         then 
-            cd ~/mozilla-central
+            wdir=$start_dir/mozilla-central
         else
-            cd ~/mozilla-$branch
+            wdir=$start_dir/mozilla-$branch
     fi
-    lastday=`cat last-metrics.txt`
+    echo Updating $branch
+    cd $wdir
+    echo CURRENT DIR IS $wdir
+    echo `pwd`
+    lastday=`cat $widr\last-metrics.txt`
     echo $lastday
-    version=`awk '{split($0,a,"."); print  a[1]}' ./browser/config/version.txt`
-    echo $today >last-metrics.txt
-    hg pull -u
-    hg metrics -f ~/hg-metrics/$branch-$version.json -d "$lastday to $today"
-    echo $branch-$version `pwd` > $start_dir/branchlist
+    version=`awk '{split($0,a,"."); print  a[1]}' $wdir/browser/config/version.txt`
+    echo $today >$wdir/last-metrics.txt
+    /usr/local/bin/hg pull -u
+    /usr/local/bin/hg metrics -f $start_dir/hg-metrics/$branch-$version.json -d "$lastday to $today"
+    echo $branch-$version `pwd` >> $start_dir/hg-metrics/branchlist
 done
 
-cd $start_dir
-/usr/local/bin/python $start_dir/parse_data.py -b $start_dir/branchlist
+cd $start_dir/hg-metrics
+/usr/local/bin/python $start_dir/hg-metrics/parse_data.py -b $start_dir/hg-metrics/branchlist
 
