@@ -7,6 +7,11 @@ from churnhash2 import ChurnHash
 from backend import SQLiteBackend
 import pprint
 import re
+import httplib
+import urllib
+import urllib2
+import time
+import datetime
 
 # Branchlist format is:
 # release-name /path/to/branchsource
@@ -71,11 +76,11 @@ def parse_data():
                 for file_data  in history[commit_id]["files"]:
                     if "filename" in file_data:
                         # Skip anything in the file_ignores list:
-                        ignore = False;
+                        ignore = False
                         for exclude in file_ignores:
                             if file_data["filename"].find(exclude) > -1:
                                 #print 'Ignoring files with ', exclude, '  - ', file_data["filename"]
-                                ignore = True; 
+                                ignore = True 
                                 break
                         if ignore:
                             continue
@@ -126,10 +131,10 @@ def parse_data():
             
                                 delta = file_data["added"] +  file_data["removed"]
                                 percent_change = float("{0:.2f}".format((float(delta) /  float(num_lines)) * 100))
-            
+                                is_regression = check_keyword(bugnumber,'regression')
                                 _backend.add_change_values(file_id[0], rel_id,  
                                                            delta, num_lines, percent_change,  
-                                                           bugnumber, commit_id, is_backout, committer_name, reviewer, approver, msg)
+                                                           bugnumber, commit_id, is_backout, committer_name, reviewer, approver, msg, is_regression)
                             #else:
                             #    print 'Commit ID: ', commit_id, ' Already Processed - SKIPPING'
             
@@ -137,6 +142,27 @@ def parse_data():
                         #    print 'Ignoring file with file extension ', fileExtension
             process_release(rel_id)
 
+def check_keyword(bugnumber, keyword):
+
+    url = 'https://bugzilla.mozilla.org/rest/bug/%s?include_fields=id,keywords' % bugnumber
+    try:
+        response = urllib2.urlopen(url).read()
+    except urllib2.HTTPError, e:
+        print('HTTPError = ' + str(e.code))
+        return
+    except urllib2.URLError, e:
+        print('URLError = ' + str(e.reason))
+        return
+    except httplib.HTTPException, e:
+        print('HTTPException')
+        return
+    data = json.loads(response)
+        
+    if keyword in data['bugs'][0]['keywords']:
+        print '%s REGRESSION' % bugnumber
+        return True
+    else:
+        return False
 
 
 def process_release(release_id):
@@ -145,6 +171,7 @@ def process_release(release_id):
     print 'Processing Release :', release_id
     # Calculate average change per release for each file
     all_files = _backend.get_files_per_release(release_id)
+    regression_list =  {}
     for file in all_files:
         file_id = file[0]
         total_delta = 0
@@ -155,36 +182,47 @@ def process_release(release_id):
         reviewers = ''
         approvers = '' 
         msgs      = ''
+        regression_count = 0
+        author_count   = 0
+        bug_count      = 0
 
         #print 'Processing File ID:', file_id
         file_commits = _backend.get_changes_by_file_release(file_id, release_id)
-        # 0 file_id, 1 total_lines, 2 delta, 3 percent_change, 4 commit_id, 5 bug, 6 is_backout, 7 committer_name, 8 reviewer, 9 approver, 10 msg 
+        # 0 file_id, 1 total_lines, 2 delta, 3 percent_change, 4 commit_id, 5 bug, 6 is_backout, 7 committer_name, 8 reviewer, 9 approver, 10 msg, 11 is_regression
         total_commits = 0
         for row in file_commits:
             total_commits += 1
             total_lines    = row[1]
             total_delta   += row[2]
+            bug            = row[5]
             is_backout     = row[6]
+            is_regression  = row[11]
 
-            if len(row[5]) > 0:
+            if len(bug) > 0:
                 # ignore duplicate bugs
-                if bugs.find(row[5]) < 0:
-                    bugs += '%s,' % row[5]
+                if bugs.find(bug) < 0:
+                    bugs += '%s,' % bug
+                    bug_count += 1
+                    if is_regression == 1:
+                        regression_count += 1
             if is_backout:
                 backout_count += 1 
             if committers.find(row[7]) <0:
                 committers += '%s,' % row[7]
+                author_count += 1
             if reviewers.find(row[8]) <0:
                 reviewers  += '%s,' % row[8]
             if approvers.find(row[9]) <0:
                 approvers  += '%s,' % row[9]
             msgs += '%s) %s ' % (total_commits, re.sub(r'[^a-zA-Z0-9= ]', '',row[10]) )
+
         total_percent = float("{0:.2f}".format((float(total_delta) / float(total_lines)) * 100))
         summary = _backend.get_summary_data(release_id, file_id)
         if summary == None:
-            _backend.add_summary_data(release_id, file_id, total_percent, bugs, backout_count, committers, reviewers, approvers, msgs, total_commits)
+            _backend.add_summary_data(release_id, file_id, total_percent, bugs, backout_count, committers, reviewers, approvers, msgs, total_commits, bug_count, regression_count, author_count)
         else:
-            _backend.update_summary_data(release_id, file_id, total_percent, bugs, backout_count, committers, reviewers, approvers, msgs, total_commits)
+            _backend.update_summary_data(release_id, file_id, total_percent, bugs, backout_count, committers, reviewers, approvers, msgs, total_commits, bug_count, regression_count, author_count )
+
 
 
 def process_data():
