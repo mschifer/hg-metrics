@@ -30,7 +30,7 @@ INSERT_FILE_NAME  = 'INSERT INTO metrics_files (file_name) VALUES(?)'
 INSERT_RELEASE    = 'INSERT INTO metrics_releases (release_name) VALUES (?)'
 INSERT_CHANGES    = 'INSERT INTO metrics_changes (delta, total_lines, percent_change, file_id, release_id, bug, commit_id, is_backout, committer_name, reviewer, approver, msg, is_regression, found, fixed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
 INSERT_SUMMARY    = 'INSERT INTO metrics_summary (release_id, bugs, file_id, percent_change, backout_count, committers, reviewers, approvers, msgs, total_commits, bug_count, regression_count, author_count) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
-INSERT_COMMITTERS = 'INSERT INTO metrics_committers (bzemail, email, manager_email, department) VALUES (?,?,?,?)"
+INSERT_COMMITTERS = 'INSERT INTO metrics_committers (bzemail, email, manager_email, department) VALUES (?,?,?,?)'
 
 # Update statements
 UPDATE_AVG_CHANGE      = 'UPDATE metrics_files SET  mean = ?, stdev = ?  WHERE file_id = ?'
@@ -318,12 +318,12 @@ class SQLiteBackend(object):
         c = self._run_execute(c, INSERT_COMMITTERS, (bzemail, email, manager_email, deptname))
         self._dbconn.commit()
 
-   def get_all_committers(self):
+    def get_all_committers(self):
         c = self._dbconn.cursor()
         c = self._run_execute(c,GET_ALL_COMMITTERS)
         return c.fetchall()
 
-   def get_all_committer(self, email):
+    def get_all_committer(self, email):
         c = self._dbconn.cursor()
         c = self._run_execute(c,GET_COMMITTER)
         return c.fetchall()
