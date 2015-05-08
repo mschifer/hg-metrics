@@ -19,6 +19,7 @@ import datetime
 # nightly-36 /Users/mschifer/mozilla-central
 # aurora-36 /Users/mschifer/mozilla-aurora
 # beta-36 /Users/mschifer/mozilla-beta
+# release-36 /Users/mschifer/mozilla-release
 
 
 branch_list = ""
@@ -29,6 +30,7 @@ def parse_data():
     nightly = {}
     aurora  = {}
     beta    = {}
+    release = {}
     file_exts = ['.cpp','.h','.xml','.js','.css','.java','.jsm','.json','.xhtml','.html','.c','.asm','.idl','.xul',]
     file_ignores = ['gaia.json','sources.xml']
     #file_ignores = ['test','gaia.json','sources.xml']
@@ -45,10 +47,13 @@ def parse_data():
            aurora[branch] = path.lstrip()
         if branch.find('beta') > -1:
            beta[branch] =  path.lstrip()
+        if branch.find('release') > -1:
+           release[branch] =  path.lstrip()
 
     list.append(nightly)
     list.append(aurora)
     list.append(beta)
+    list.append(release)
     
     # Process each of the json files in the brach list
     # Files must be processed in order of Nightly, Aurora, Beta
@@ -60,7 +65,8 @@ def parse_data():
             rels =  _backend.get_release_id(release)
             if len(rels) == 0:
                 #print 'Release Not Found: Adding Release'
-                rels  =   _backend.add_release_values(release)
+                branch,number = release.split('-',1)
+                rels  =   _backend.add_release_values(release,number)
                 rel_id = rels[0][0]
             else:
                 rel_id = rels[0][0]
@@ -218,7 +224,7 @@ def process_release(release_id):
 
         total_percent = float("{0:.2f}".format((float(total_delta) / float(total_lines)) * 100))
         summary = _backend.get_summary_data(release_id, file_id)
-        if summary == None:
+        if summary == []:
             _backend.add_summary_data(release_id, file_id, total_percent, bugs, backout_count, committers, reviewers, approvers, msgs, total_commits, bug_count, regression_count, author_count)
         else:
             _backend.update_summary_data(release_id, file_id, total_percent, bugs, backout_count, committers, reviewers, approvers, msgs, total_commits, bug_count, regression_count, author_count )

@@ -4,7 +4,7 @@ cd /Users/mschifer
 start_dir=`pwd`
 
 cat /dev/null > $start_dir/hg-metrics/branchlist
-for branch in beta aurora nightly
+for branch in beta aurora nightly release
 do 
     if [ $branch  == 'nightly' ]
         then 

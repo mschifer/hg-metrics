@@ -8,11 +8,12 @@ METRICS_FILE_LIST_TABLE_NAME  = 'metrics_files'
 METRICS_CHANGES_TABLE_NAME    = 'metrics_changes'
 METRICS_SUMMARY_TABLE_NAME    = 'metrics_summary'
 METRICS_COMMITTERS_TABLE_NAME = 'metrics_committers'
+METRICS_REGRESSIONS_TABLE_NAME       = 'metrics_bugs'
 
 # TODO Should really fully parameterize table names...future.
 
 # Create table statements
-create_table_stmts = {METRICS_RELEASE_TABLE_NAME: '''CREATE TABLE metrics_releases(release_name VARCHAR(100), 
+create_table_stmts = {METRICS_RELEASE_TABLE_NAME: '''CREATE TABLE metrics_releases(release_name VARCHAR(100), release_number INTEGER,
                                            release_id INTEGER PRIMARY KEY)''',
                       METRICS_FILE_LIST_TABLE_NAME: '''CREATE TABLE metrics_files(file_name VARCHAR(250),
                                             file_id INTEGER PRIMARY KEY, mean INTEGER, stdev INTEGER)''',
@@ -20,17 +21,21 @@ create_table_stmts = {METRICS_RELEASE_TABLE_NAME: '''CREATE TABLE metrics_releas
                                           file_id INTEGER, release_id INTEGER, bug VARCHAR(8), commit_id VARCHAR(100), is_backout INTEGER,
                                           committer_name VARCHAR(25), reviewer VARCHAR(25), approver VARCHAR(25), msg VARCHAR(250), is_regression INTEGER, found DATE, fixed DATE)''',
                       METRICS_SUMMARY_TABLE_NAME: '''CREATE TABLE metrics_summary (release_id INTEGER, file_id INTEGER, percent_change INTEGER, bugs VARCHAR(100), backout_count INTEGER, committers VARCHAR(250), reviewers VARCHAR(250), approvers VARCHAR(250), msgs VARCHAR(500), total_commits INTEGER, bug_count INTEGER, regression_count INTEGER, author_count INTEGER)''',
-                      METRICS_COMMITTERS_TABLE_NAME: '''CREATE TABLE metrics_committers (bzemail VARCHAR(25), email VARCHAR(25), manager_email VARCHAR(25), department VARCHAR(50))'''}
+                      METRICS_COMMITTERS_TABLE_NAME: '''CREATE TABLE metrics_committers (bzemail VARCHAR(25), email VARCHAR(25), manager_email VARCHAR(25), department VARCHAR(50))''',
+                      METRICS_REGRESSIONS_TABLE_NAME: '''CREATE TABLE metrics_bugs (bug INTEGER PRIMARY KEY, version VARCHAR(12), found DATE, fixed DATE, product VARCHAR(25), status VARCHAR(25), component VARCHAR(25), is_regression INTEGER)''',
+
+}
 
 # Does the table exist query
 TABLE_EXIST_STMT = "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
 
 # Insert statements
 INSERT_FILE_NAME  = 'INSERT INTO metrics_files (file_name) VALUES(?)'
-INSERT_RELEASE    = 'INSERT INTO metrics_releases (release_name) VALUES (?)'
+INSERT_RELEASE    = 'INSERT INTO metrics_releases (release_name, release_number) VALUES (?,?)'
 INSERT_CHANGES    = 'INSERT INTO metrics_changes (delta, total_lines, percent_change, file_id, release_id, bug, commit_id, is_backout, committer_name, reviewer, approver, msg, is_regression, found, fixed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
 INSERT_SUMMARY    = 'INSERT INTO metrics_summary (release_id, bugs, file_id, percent_change, backout_count, committers, reviewers, approvers, msgs, total_commits, bug_count, regression_count, author_count) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
 INSERT_COMMITTERS = 'INSERT INTO metrics_committers (bzemail, email, manager_email, department) VALUES (?,?,?,?)'
+INSERT_REGRESSION = 'INSERT INTO metrics_bugs (bug, version, found, fixed, product, status, component, is_regression) VALUES (?,?,?,?,?,?,?,?)'
 
 # Update statements
 UPDATE_AVG_CHANGE      = 'UPDATE metrics_files SET  mean = ?, stdev = ?  WHERE file_id = ?'
@@ -40,7 +45,10 @@ UPDATE_SUMMARY         = 'UPDATE metrics_summary SET percent_change = ?, bugs = 
 UPDATE_REGRESSION_COUNT_SUMMARY  = 'UPDATE metrics_summary SET regression_count = ?  WHERE  file_id = ? AND release_id = ?'
 UPDATE_BUG_COUNT_SUMMARY  = 'UPDATE metrics_summary SET bug_count = ?  WHERE  bug = ?'
 UPDATE_AUTHOR_COUNT_SUMMARY  = 'UPDATE metrics_summary SET author_count = ?  WHERE  bug = ?'
-UPDATE_COMMITTERS = 'UPDATE metrics_committers SET bzemail = ?, SET email = ?, SET manager_email = ?, SET department = ?'
+UPDATE_COMMITTERS = 'UPDATE metrics_committers SET bzemail = ?, SET email = ?, SET manager_email = ?, SET department = ? WHERE bzemail = ?'
+UPDATE_REGRESSIONS = 'UPDATE metrics_bugs SET status = ?,fixed = ?, is_regression = ? WHERE bug = ?'
+UPDATE_BUG_RELEASE_ID = 'UPDATE metrics_bugs SET release_id = ? WHERE bug = ?'
+
 
 # Could not get this to parameterize properly with ?'s
 DROP_TABLE_STMT = "DROP TABLE %s"
@@ -84,6 +92,10 @@ GET_REGRESSIONS = 'SELECT DISTINCT bug, file_id, release_id FROM metrics_changes
 GET_ALL_COMMITTERS = 'SELECT bzemail, email, manager_email, department FROM metrics_committers'
 GET_COMMITTER_EMAIL = 'SELECT bzemail, email, manager_email, department FROM metrics_committers WHERE email = ?'
 GET_COMMITTER_BZEMAIL = 'SELECT bzemail, email, manager_email, department FROM metrics_committers WHERE bzemail = ?'
+GET_REGRESSION_BUG  = 'SELECT bug, version, found, fixed, product, status, component, is_regression FROM metrics_bugs WHERE bug = ?'
+GET_REGRESSION_RELEASE = 'SELECT bug, found, fixed, product, status, component, is_regression FROM metrics_bugs WHERE version = ?'
+GET_ALL_BUG_IDS = 'SELECT bug FROM metrics_bugs'
+GET_MAX_VERSIONS = 'SELECT nightly, aurora, beta, release FROM metrics_release_schedule WHERE start_date = (SELECT MAX(start_date) FROM metrics_release_schedule WHERE start_date <= ?)'
 
 
 class SQLiteBackend(object):
@@ -158,7 +170,7 @@ class SQLiteBackend(object):
         c = self._dbconn.cursor()
         self._run_execute(c, INSERT_CHANGES , [delta, total_lines, percent_change, file_id, release_id, bug, commit_id, is_backout, committer_name, reviewer, approver, msg, is_regression])
         self._dbconn.commit()
- 
+
     def add_file_values(self, file_name):
         # Add entry to the METRICS_FILES table
         c = self._dbconn.cursor()
@@ -166,10 +178,10 @@ class SQLiteBackend(object):
         self._dbconn.commit()
         return self.get_file_id(file_name)
 
-    def add_release_values(self, release_name):
+    def add_release_values(self, release_name, release_number):
         # Add entry to the METRICS_FILES table
         c = self._dbconn.cursor()
-        self._run_execute(c, INSERT_RELEASE, [release_name])
+        self._run_execute(c, INSERT_RELEASE, [release_name, release_number])
         self._dbconn.commit()
         return self.get_release_id(release_name)
 
@@ -326,5 +338,40 @@ class SQLiteBackend(object):
     def get_all_committer(self, email):
         c = self._dbconn.cursor()
         c = self._run_execute(c,GET_COMMITTER)
+        return c.fetchall()
+
+    def add_bug(self, bug, version, found, fixed, product, status, component, is_regression):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c, INSERT_REGRESSION, (bug, version, found, fixed, product, status, component, is_regression))
+        self._dbconn.commit()
+
+    def get_regression_bug(self, bug):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c,GET_REGRESSION_BUG, [bug])
+        return c.fetchall()
+
+    def get_regression_release(self, version):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c,GET_REGRESSION_RELEASE, [version])
+        return c.fetchall()
+
+    def update_bug(self, bug, fixed, status, is_regression):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c, UPDATE_REGRESSIONS, (fixed, status, bug, is_regression))
+        self._dbconn.commit()
+
+    def update_bug_release_id(self, bug, release_id):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c, UPDATE_BUG_RELEASE_ID, (release_id, bug))
+        self._dbconn.commit() 
+
+    def get_all_bug_ids(self):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c, GET_ALL_BUG_IDS)
+        return c.fetchall()
+
+    def get_max_versions(self, found):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c,GET_MAX_VERSIONS, [found])
         return c.fetchall()
 
