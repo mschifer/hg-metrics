@@ -22,7 +22,7 @@ create_table_stmts = {METRICS_RELEASE_TABLE_NAME: '''CREATE TABLE metrics_releas
                                           committer_name VARCHAR(25), reviewer VARCHAR(25), approver VARCHAR(25), msg VARCHAR(250), is_regression INTEGER, found DATE, fixed DATE)''',
                       METRICS_SUMMARY_TABLE_NAME: '''CREATE TABLE metrics_summary (release_id INTEGER, file_id INTEGER, percent_change INTEGER, bugs VARCHAR(100), backout_count INTEGER, committers VARCHAR(250), reviewers VARCHAR(250), approvers VARCHAR(250), msgs VARCHAR(500), total_commits INTEGER, bug_count INTEGER, regression_count INTEGER, author_count INTEGER)''',
                       METRICS_COMMITTERS_TABLE_NAME: '''CREATE TABLE metrics_committers (bzemail VARCHAR(25), email VARCHAR(25), manager_email VARCHAR(25), department VARCHAR(50))''',
-                      METRICS_REGRESSIONS_TABLE_NAME: '''CREATE TABLE metrics_bugs (bug INTEGER PRIMARY KEY, version VARCHAR(12), found DATE, fixed DATE, product VARCHAR(25), status VARCHAR(25), component VARCHAR(25), is_regression INTEGER)''',
+                      METRICS_REGRESSIONS_TABLE_NAME: '''CREATE TABLE metrics_bugs (bug INTEGER PRIMARY KEY, version VARCHAR(12), found DATE, fixed DATE, product VARCHAR(25), status VARCHAR(25), component VARCHAR(25), is_regression INTEGER, release_id INTEGER);)''',
 
 }
 
@@ -32,7 +32,9 @@ TABLE_EXIST_STMT = "SELECT name FROM sqlite_master WHERE type='table' AND name=?
 # Insert statements
 INSERT_FILE_NAME  = 'INSERT INTO metrics_files (file_name) VALUES(?)'
 INSERT_RELEASE    = 'INSERT INTO metrics_releases (release_name, release_number) VALUES (?,?)'
-INSERT_CHANGES    = 'INSERT INTO metrics_changes (delta, total_lines, percent_change, file_id, release_id, bug, commit_id, is_backout, committer_name, reviewer, approver, msg, is_regression, found, fixed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+
+INSERT_CHANGES    = 'INSERT INTO metrics_changes (file_id, release_id, delta, total_lines, percent_change, bug, commit_id, is_backout, committer_name, reviewer, approver, msg, is_regression,  found, fixed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+
 INSERT_SUMMARY    = 'INSERT INTO metrics_summary (release_id, bugs, file_id, percent_change, backout_count, committers, reviewers, approvers, msgs, total_commits, bug_count, regression_count, author_count) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
 INSERT_COMMITTERS = 'INSERT INTO metrics_committers (bzemail, email, manager_email, department) VALUES (?,?,?,?)'
 INSERT_REGRESSION = 'INSERT INTO metrics_bugs (bug, version, found, fixed, product, status, component, is_regression) VALUES (?,?,?,?,?,?,?,?)'
@@ -165,10 +167,10 @@ class SQLiteBackend(object):
     # Data Functions
     # Add data to tables
     # Get Data from tables
-    def add_change_values(self,file_id,release_id, delta, total_lines, percent_change, bug, commit_id, is_backout, committer_name, reviewer, approver, msg, is_regression):
+    def add_change_values(self, file_id, release_id, delta, total_lines, percent_change, bug, commit_id, is_backout, committer_name, reviewer, approver, msg, is_regression,  found, fixed):
         # Add entry to the METRICS_CHANGES table
         c = self._dbconn.cursor()
-        self._run_execute(c, INSERT_CHANGES , [delta, total_lines, percent_change, file_id, release_id, bug, commit_id, is_backout, committer_name, reviewer, approver, msg, is_regression])
+        self._run_execute(c, INSERT_CHANGES , [file_id, release_id, delta, total_lines, percent_change, bug, commit_id, is_backout, committer_name, reviewer, approver, msg, is_regression,  found, fixed])
         self._dbconn.commit()
 
     def add_file_values(self, file_name):

@@ -138,9 +138,17 @@ def parse_data():
                                 delta = file_data["added"] +  file_data["removed"]
                                 percent_change = float("{0:.2f}".format((float(delta) /  float(num_lines)) * 100))
                                 is_regression = check_keyword(bugnumber,'regression')
-                                _backend.add_change_values(file_id[0], rel_id,  
-                                                           delta, num_lines, percent_change,  
-                                                           bugnumber, commit_id, is_backout, committer_name, reviewer, approver, msg, is_regression)
+                                foundtime  = get_bug_field(bugnumber,'creation_time')
+                                if foundtime == None:
+                                    found  = ""
+                                else:
+                                    found, time  = foundtime.split('T',1)
+                                fixedtime  = get_bug_field(bugnumber,'cf_last_resolved')
+                                if fixedtime == None:
+                                    fixed  = ""
+                                else:
+                                    fixed, time  = fixedtime.split('T',1)
+                                _backend.add_change_values(file_id[0], rel_id,  delta, num_lines, percent_change, bugnumber, commit_id, is_backout, committer_name, reviewer, approver, msg, is_regression, found, fixed)
                             #else:
                             #    print 'Commit ID: ', commit_id, ' Already Processed - SKIPPING'
             
@@ -150,7 +158,36 @@ def parse_data():
 
 def check_keyword(bugnumber, keyword):
 
-    url = 'https://bugzilla.mozilla.org/rest/bug/%s?include_fields=id,keywords' % bugnumber
+    data = get_bug_data(bugnumber,'keywords')
+    if data == None:
+        return False
+    if keyword in data['bugs'][0]['keywords']:
+        print '%s REGRESSION' % bugnumber
+        return True
+    else:
+        return False
+
+def get_bug_field(bugnumber, field_name):
+
+    data = get_bug_data(bugnumber, field_name)
+    if data == None:
+        return None
+
+    if field_name in data['bugs'][0]:
+        print 'DATA FOR %s: %s' % (field_name, data['bugs'][0][field_name])
+        return data['bugs'][0][field_name]
+    else:
+        return None
+
+
+def get_bug_data(bugnumber,field_name):
+
+    print 'Getting Bug Number: %s' % bugnumber
+    if bugnumber == "":
+       return None
+    url = 'https://bugzilla.mozilla.org/rest/bug/%s?include_fields=id,%s' % (bugnumber,field_name)
+    print url 
+    reponse = None
     try:
         response = urllib2.urlopen(url).read()
     except urllib2.HTTPError, e:
@@ -162,13 +199,7 @@ def check_keyword(bugnumber, keyword):
     except httplib.HTTPException, e:
         print('HTTPException')
         return
-    data = json.loads(response)
-        
-    if keyword in data['bugs'][0]['keywords']:
-        print '%s REGRESSION' % bugnumber
-        return True
-    else:
-        return False
+    return json.loads(response)
 
 
 def process_release(release_id):
