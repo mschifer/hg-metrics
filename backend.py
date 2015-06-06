@@ -10,11 +10,19 @@ METRICS_CHANGES_TABLE_NAME    = 'metrics_changes'
 METRICS_SUMMARY_TABLE_NAME    = 'metrics_summary'
 METRICS_PEOPLE_TABLE_NAME     = 'metrics_people'
 METRICS_REGRESSIONS_TABLE_NAME= 'metrics_bugs'
-METRICS_BUG_STATS_TABLE_NAME  = 'metrics_bug_stats'
 METRICS_TEAM_VIEW             = 'metrics_team_view'
 METRICS_RELEASE_MASTER_VIEW   = 'metrics_release_master_view'
 METRICS_FILE_REGRESSION_RATE_VIEW = 'metrics_file_regression_rate_view'
 METRICS_TEAM_REGRESSION_RATE_VIEW = 'metrics_team_regression_rate_view'
+METRICS_REGRESSION_COUNT_VIEW = 'metrics_regression_count_view'
+METRICS_BUG_COUNT_VIEW = 'metrics_bug_count_view'
+METRICS_REGRESSIONS_FIXED_VIEW = 'metrics_regressions_fixed_view'
+METRICS_BUGS_FIXED_VIEW = 'metrics_bugs_fixed_view'
+METRICS_BACKOUT_COUNT_VIEW = 'metrics_backout_count_view'
+METRICS_BUG_STATS_VIEW = 'metrics_bug_stats_view'
+
+
+
 
 # TODO Should really fully parameterize table names...future.
 
@@ -37,14 +45,11 @@ create_table_stmts = {METRICS_RELEASE_TABLE_NAME: '''CREATE TABLE metrics_releas
                           manager_id INTEGER,  department VARCHAR(50))''',
                       METRICS_REGRESSIONS_TABLE_NAME: '''CREATE TABLE metrics_bugs (bug INTEGER PRIMARY KEY, 
                           version VARCHAR(12), found DATE, fixed DATE, product VARCHAR(25), status VARCHAR(25), 
-                          component VARCHAR(25), is_regression INTEGER, release_id INTEGER)''',
-                      METRICS_BUG_STATS_TABLE_NAME: '''CREATE TABLE metrics_bug_stats (bug_count INTEGER, 
-                          regression_count INTEGER, bug_fixed INTEGER, regression_fixed INTEGER, 
-                          backout_count, release_id INTEGER)'''
+                          component VARCHAR(25), is_regression INTEGER, release_id INTEGER)'''
                
 }
 
-create_view_stmts = {
+create_view_stmts1 = {
                       METRICS_TEAM_VIEW: '''CREATE VIEW metrics_team_view AS SELECT m.name AS manager, 
                           m.bzemail AS manageremail, m.people_id AS m_id, e.name, e.bzemail AS committer, 
                           e.people_id AS c_id, e.department AS department FROM metrics_people e 
@@ -66,7 +71,34 @@ create_view_stmts = {
                           TOTAL(is_regression) AS regressions, TOTAL(is_backout) AS backouts 
                           FROM metrics_team_view m, metrics_changes c, metrics_releases r 
                           WHERE c.committer_name = m.name AND c.release_id = r.release_id 
-                          GROUP BY c.committer_name, r.release_number'''
+                          GROUP BY c.committer_name, r.release_number''',
+                      METRICS_REGRESSION_COUNT_VIEW:'''CREATE VIEW metrics_regression_count_view 
+                          AS SELECT count(*) AS regression_count, release_id 
+                          FROM metrics_bugs WHERE is_regression > 0 GROUP BY release_id''',
+                      METRICS_BUG_COUNT_VIEW: '''CREATE VIEW metrics_bug_count_view 
+                          AS SELECT count(*) AS bug_count, release_id 
+                          FROM metrics_bugs GROUP BY release_id''',
+                      METRICS_REGRESSIONS_FIXED_VIEW: '''CREATE VIEW metrics_regressions_fixed_view 
+                          AS SELECT count(*) AS regressions_fixed, release_id 
+                          FROM metrics_bugs WHERE is_regression > 0 and fixed > "2000-01-01" GROUP BY release_id''',
+                      METRICS_BUGS_FIXED_VIEW: '''CREATE VIEW metrics_bugs_fixed_view 
+                          AS SELECT count(*) AS bugs_fixed, release_id 
+                          FROM metrics_bugs WHERE fixed > "2000-01-01" GROUP BY release_id''',
+                      METRICS_BACKOUT_COUNT_VIEW: '''CREATE VIEW metrics_backout_count_view 
+                          AS SELECT count(*) AS backout_count, release_id 
+                          FROM metrics_changes WHERE is_backout = 1 GROUP BY release_id'''
+}
+create_view_stmts2 = {
+                      METRICS_BUG_STATS_VIEW: '''CREATE VIEW metrics_bug_stats_view 
+                          AS SELECT rcv.regression_count, bcv.bug_count, rfv.regressions_fixed, 
+                          bfv.bugs_fixed, bocv.backout_count, rcv.release_id 
+                          FROM metrics_regression_count_view rcv, metrics_bug_count_view bcv, metrics_regressions_fixed_view rfv, 
+                          metrics_bugs_fixed_view bfv, metrics_backout_count_view bocv 
+                          WHERE rcv.release_id =  bcv.release_id 
+                          AND rcv.release_id =  rfv.release_id 
+                          AND rcv.release_id = bfv.release_id 
+                          AND rcv.release_id =  bocv.release_id 
+                          ORDER BY rcv.release_id'''
 }
 
 # Does the table exist query
@@ -87,8 +119,6 @@ INSERT_SUMMARY    = 'INSERT INTO metrics_summary (release_id, bugs, file_id, per
 INSERT_PEOPLE = 'INSERT INTO metrics_people (name, bzemail, email, manager_email, department) VALUES (?,?,?,?,?)'
 INSERT_REGRESSION = 'INSERT INTO metrics_bugs (bug, version, found, fixed, product, status, component, ' \
                      'is_regression, release_id) VALUES (?,?,?,?,?,?,?,?,?)'
-INSERT_BUG_STATS  = 'INSERT INTO metrics_bug_stats (bug_count , regression_count , bug_fixed , regression_fixed, ' \
-                     'backout_count, release_id ) VALUES (?,?,?,?,?,?)'
 
 # Update statements
 UPDATE_AVG_CHANGE         = 'UPDATE metrics_files SET  mean = ?, stdev = ?  WHERE file_id = ?'
@@ -162,6 +192,13 @@ GET_MAX_VERSIONS = 'SELECT nightly, aurora, beta, release FROM metrics_release_s
                    'WHERE start_date <= ?)'
 GET_MAX_NIGHTLY = 'SELECT MAX(nightly) FROM metrics_release_schedule'
 GET_PEOPLE_ID = 'SELECT people_id FROM metrics_people WHERE bzemail = ?'
+GET_RELEASE_SCHEDULE = 'SELECT start_date, nightly, aurora, beta, release FROM metrics_release_schedule WHERE release > 24 ORDER by nightly'
+
+GET_REGRESSION_COUNT ='SELECT regression_count, release_id  FROM metrics_bug_stats_view'
+GET_BUG_COUNT = 'SELECT bug_count, release_id FROM metrics_bug_stats_view'
+GET_REGRESSION_FIXED = 'SELECT regressions_fixed, release_id FROM metrics_bug_stats_view'
+GET_BUG_FIXED = 'SELECT bugs_fixed, release_id FROM metrics_bug_stats_view'
+GET_BACKOUT_COUNT = 'SELECT backout_count, release_id FROM metrics_bug_stats_view'
 
 
 
@@ -215,9 +252,12 @@ class SQLiteBackend(object):
             if not self._table_exists(t):
                 self._run_execute(c, create_table_stmts[t])
 
-        for v in create_view_stmts:
+        for v in create_view_stmts1:
             if not self._view_exists(v):
-                self._run_execute(c, create_view_stmts[v])
+                self._run_execute(c, create_view_stmts1[v])
+        for v in create_view_stmts2:
+            if not self._view_exists(v):
+                self._run_execute(c, create_view_stmts2[v])
 
     def _drop_tables(self):
         c = self._dbconn.cursor()
@@ -228,7 +268,10 @@ class SQLiteBackend(object):
 
     def _drop_views(self):
         c = self._dbconn.cursor()
-        for t in create_view_stmts:
+        for t in create_view_stmts2:
+            if self._view_exists(t):
+                self._run_execute(c, DROP_VIEW_STMT % t)
+        for t in create_view_stmts1:
             if self._view_exists(t):
                 self._run_execute(c, DROP_VIEW_STMT % t)
         self._dbconn.commit()
@@ -465,11 +508,6 @@ class SQLiteBackend(object):
         c = self._run_execute(c,GET_MAX_NIGHTLY)
         return c.fetchone()
 
-    def add_bug_stats(self, bug_count, regression_count, bug_fixed, regression_fixed, backout_count, release_id ):
-        c = self._dbconn.cursor()
-        c = self._run_execute(c, INSERT_BUG_STATS,[bug_count , regression_count , bug_fixed , regression_fixed , backout_count, release_id])
-        self._dbconn.commit()
-
     def get_people_id(self, bzemail):
         c = self._dbconn.cursor()
         c = self._run_execute(c, GET_PEOPLE_ID, [bzemail])
@@ -479,4 +517,34 @@ class SQLiteBackend(object):
         c = self._dbconn.cursor()
         c = self._run_execute(c, UPDATE_MANAGER_ID ,[manager_id, manager_email])
         self._dbconn.commit()
- 
+
+    def get_release_schedule(self):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c, GET_RELEASE_SCHEDULE)
+        return c.fetchall()
+
+    def get_regession_count(self):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c, GET_REGRESSION_COUNT)
+        return c.fetchall()
+
+    def get_bug_count(self):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c, GET_BUG_COUNT)
+        return c.fetchall()
+
+    def get_regession_fixed(self):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c, GET_REGRESSION_FIXED)
+        return c.fetchall()
+
+    def get_bug_fixed(self):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c, GET_BUG_FIXED)
+        return c.fetchall()
+
+    def get_backout_count(self):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c, GET_BACKOUT_COUNT)
+        return c.fetchall()
+
