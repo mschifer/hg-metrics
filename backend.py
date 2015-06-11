@@ -92,7 +92,7 @@ create_view_stmts1 = {
                           FROM metrics_changes WHERE is_backout = 1 GROUP BY release_id'''
 }
 create_view_stmts2 = {
-                      METRICS_BUG_STATS_VIEW: '''CREATE VIEW metrics_bug_stats_view 
+                      METRICS_BUG_STATS_VIEW: '''CREATE VIEW metrics_bug_stats_view  AS
                           SELECT mr.release_id, rcv.regression_count, bcv.bug_count, rfv.regressions_fixed,
                           bfv.bugs_fixed, bocv.backout_count, rcv.release_id
                           FROM metrics_releases mr
