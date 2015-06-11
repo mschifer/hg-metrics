@@ -10,6 +10,7 @@ METRICS_CHANGES_TABLE_NAME    = 'metrics_changes'
 METRICS_SUMMARY_TABLE_NAME    = 'metrics_summary'
 METRICS_PEOPLE_TABLE_NAME     = 'metrics_people'
 METRICS_REGRESSIONS_TABLE_NAME= 'metrics_bugs'
+METRICS_RELEASE_SCHEDULE      = 'metrics_release_schedule'
 METRICS_TEAM_VIEW             = 'metrics_team_view'
 METRICS_RELEASE_MASTER_VIEW   = 'metrics_release_master_view'
 METRICS_FILE_REGRESSION_RATE_VIEW = 'metrics_file_regression_rate_view'
@@ -45,7 +46,9 @@ create_table_stmts = {METRICS_RELEASE_TABLE_NAME: '''CREATE TABLE metrics_releas
                           manager_id INTEGER,  department VARCHAR(50))''',
                       METRICS_REGRESSIONS_TABLE_NAME: '''CREATE TABLE metrics_bugs (bug INTEGER PRIMARY KEY, 
                           version VARCHAR(12), found DATE, fixed DATE, product VARCHAR(25), status VARCHAR(25), 
-                          component VARCHAR(25), is_regression INTEGER, release_id INTEGER)'''
+                          component VARCHAR(25), is_regression INTEGER, release_id INTEGER)''',
+                      METRICS_RELEASE_SCHEDULE: '''CREATE TABLE metrics_release_schedule (start_date DATE, 
+                          nightly INTEGER, aurora INTEGER, beta INTEGER, release INTEGER)'''
                
 }
 
@@ -90,15 +93,15 @@ create_view_stmts1 = {
 }
 create_view_stmts2 = {
                       METRICS_BUG_STATS_VIEW: '''CREATE VIEW metrics_bug_stats_view 
-                          AS SELECT rcv.regression_count, bcv.bug_count, rfv.regressions_fixed, 
-                          bfv.bugs_fixed, bocv.backout_count, rcv.release_id 
-                          FROM metrics_regression_count_view rcv, metrics_bug_count_view bcv, metrics_regressions_fixed_view rfv, 
-                          metrics_bugs_fixed_view bfv, metrics_backout_count_view bocv 
-                          WHERE rcv.release_id =  bcv.release_id 
-                          AND rcv.release_id =  rfv.release_id 
-                          AND rcv.release_id = bfv.release_id 
-                          AND rcv.release_id =  bocv.release_id 
-                          ORDER BY rcv.release_id'''
+                          SELECT mr.release_id, rcv.regression_count, bcv.bug_count, rfv.regressions_fixed,
+                          bfv.bugs_fixed, bocv.backout_count, rcv.release_id
+                          FROM metrics_releases mr
+                          LEFT JOIN metrics_regression_count_view rcv ON rcv.release_id = mr.release_id
+                          LEFT JOIN metrics_bug_count_view bcv ON bcv.release_id = mr.release_id
+                          LEFT JOIN metrics_regressions_fixed_view rfv ON rfv.release_id = mr.release_id
+                          LEFT JOIN metrics_bugs_fixed_view bfv ON bfv.release_id = mr.release_id
+                          LEFT JOIN metrics_backout_count_view bocv ON bocv.release_id = mr.release_id
+                          ORDER BY mr.release_id;
 }
 
 # Does the table exist query
@@ -119,6 +122,7 @@ INSERT_SUMMARY    = 'INSERT INTO metrics_summary (release_id, bugs, file_id, per
 INSERT_PEOPLE = 'INSERT INTO metrics_people (name, bzemail, email, manager_email, department) VALUES (?,?,?,?,?)'
 INSERT_REGRESSION = 'INSERT INTO metrics_bugs (bug, version, found, fixed, product, status, component, ' \
                      'is_regression, release_id) VALUES (?,?,?,?,?,?,?,?,?)'
+INSERT_RELEASE_SCHEDULE = 'INSERT INTO metrics_release_schedule (start_date, nightly, aurora, beta, release) VALUES (?,?,?,?,?)'
 
 # Update statements
 UPDATE_AVG_CHANGE         = 'UPDATE metrics_files SET  mean = ?, stdev = ?  WHERE file_id = ?'
@@ -199,7 +203,7 @@ GET_BUG_COUNT = 'SELECT bug_count, release_id FROM metrics_bug_stats_view'
 GET_REGRESSION_FIXED = 'SELECT regressions_fixed, release_id FROM metrics_bug_stats_view'
 GET_BUG_FIXED = 'SELECT bugs_fixed, release_id FROM metrics_bug_stats_view'
 GET_BACKOUT_COUNT = 'SELECT backout_count, release_id FROM metrics_bug_stats_view'
-
+GET_RELEASE_SCHEDULE = 'SELECT start_date, nightly, aurora, beta, release FROM metrics_release_schedule WHERE start_date= ?'
 
 
 class SQLiteBackend(object):
@@ -287,6 +291,11 @@ class SQLiteBackend(object):
         c = self._run_execute(c, VIEW_EXIST_STMT, [name])
         r = c.fetchone()
         return (r and (r[0] == name))
+
+    def init_data(self):
+        self._drop_views()
+        self._drop_tables()
+        self._verify_tables()
 
     ###
     # Data Functions
@@ -503,7 +512,7 @@ class SQLiteBackend(object):
         c = self._run_execute(c,GET_MAX_VERSIONS, [found])
         return c.fetchall()
 
-    def get_max_nightly():
+    def get_max_nightly(self):
         c = self._dbconn.cursor()
         c = self._run_execute(c,GET_MAX_NIGHTLY)
         return c.fetchone()
@@ -547,4 +556,14 @@ class SQLiteBackend(object):
         c = self._dbconn.cursor()
         c = self._run_execute(c, GET_BACKOUT_COUNT)
         return c.fetchall()
+
+    def add_release_schedule(self, start_date, nightly, aurora, beta, release):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c, INSERT_RELEASE_SCHEDULE,[start_date, nightly, aurora, beta, release])
+        self._dbconn.commit()
+
+    def get_release_schedule(self, start_date):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c, GET_RELEASE_SCHEDULE, [start_date])
+        return c.fetchone()
 

@@ -12,6 +12,7 @@ import urllib
 import urllib2
 import time
 import datetime
+from table_parser import TableParser
 
 # Branchlist format is:
 # release-name /path/to/branchsource
@@ -306,7 +307,7 @@ def process_release(release_id):
         print 'WHAT DID I GET HERE!!!'
         pprint.pprint(summary)
         print '----------------------'
-        if summary == []:
+        if summary == [] or summary == None:
             _backend.add_summary_data(release_id, file_id, total_percent, bugs, backout_count, committers, reviewers, approvers, msgs, total_commits, bug_count, regression_count, author_count)
         else:
             _backend.update_summary_data(release_id, file_id, total_percent, bugs, backout_count, committers, reviewers, approvers, msgs, total_commits, bug_count, regression_count, author_count )
@@ -557,6 +558,136 @@ def update_release_schedule(release_number):
         print 'Release %s already in release_schedule' % (release_number)
 
 
+def import_release_calendar():
+    # Parse the rapid release calendar web page
+    url = 'https://wiki.mozilla.org/RapidRelease/Calendar'
+    
+    req = urllib2.Request(url)
+    f = urllib2.urlopen(req)
+    tp = TableParser()
+    tp.feed(f.read())
+    f.close()
+    releaseDates = []
+    rowcnt = 0
+    for row in tp.doc:
+        if rowcnt > 1:
+            print 'Branch Dates'
+            for element in row:
+                if element[0][0] == 'quarter ' or element[0][0] == 'merge date':
+                    continue
+                
+                if re.match('^Q',str(element[0][0])):
+                    if len(element) >  6:
+                        releaseDates.append( { 'startDate':element[1][0].rstrip(),
+                                             'nightly':element[2][0].rstrip().replace('Firefox ',''),
+                                             'aurora':element[3][0].rstrip().replace('Firefox ',''),
+                                             'beta':element[4][0].rstrip().replace('Firefox ',''),
+                                             'endDate':element[5][0].rstrip().replace('Firefox ',''),
+                                             'release':element[6][0].rstrip().replace('Firefox ','')
+                                              } )
+                else:
+                    if len(element)  > 5:
+                        releaseDates.append( { 'startDate':element[0][0].rstrip().replace('Firefox ',''),
+                                             'nightly':element[1][0].rstrip().replace('Firefox ',''),
+                                             'aurora':element[2][0].rstrip().replace('Firefox ',''),
+                                             'beta':element[3][0].rstrip().replace('Firefox ',''),
+                                             'endDate':element[4][0].rstrip().replace('Firefox ',''),
+                                             'release':element[5][0].rstrip().replace('Firefox ','')
+                                             } 
+                                            )
+        rowcnt += 1
+    for schedule in releaseDates:
+        try:
+            time.strptime(schedule['startDate'], '%Y-%m-%d')
+            print 'Valid Start Date: %s' % schedule['startDate']
+        except ValueError:
+             print 'Invalid Start Date: %s' % schedule['startDate']
+             continue
+    
+        checkit = _backend.get_release_schedule(schedule['startDate'])
+        if checkit == None:
+            print 'ADD: %s, %s, %s, %s, %s' % (schedule['startDate'], schedule['nightly'], schedule['aurora'], schedule['beta'], schedule['release'])
+            _backend.add_release_schedule(schedule['startDate'], schedule['nightly'], schedule['aurora'], schedule['beta'], schedule['release'])
+
+        else:
+            print 'ALREADY ADDED: %s, %s, %s, %s, %s' % (schedule['startDate'], schedule['nightly'], schedule['aurora'], schedule['beta'], schedule['release'])
+            pprint.pprint(checkit)
+
+
+def get_phone_book_data(username, password):
+
+    url = 'https://phonebook.mozilla.org/search.php?format=json'
+
+    passman = urllib2.HTTPPasswordMgrWithDefaultRealm()
+    print 'USERNAME:%s:' % username
+    print 'PASSWORD:%s:' % password
+    passman.add_password(None, url, username, password)
+    urllib2.install_opener(urllib2.build_opener(urllib2.HTTPBasicAuthHandler(passman)))
+    req = urllib2.Request(url)
+    f = urllib2.urlopen(req)
+    response = f.read()
+    data = json.loads(response)
+
+    for person in data:
+        #pprint.pprint(person)
+        print '----'
+        for k in person.keys():
+            pprint.pprint('K: %s, V:%s' %(k, person[k]))
+        rec = {}
+        rec['manager_name'] = ''
+        rec['manager_email'] = ''
+        for k in {'cn','employeenumber','bugzillaemail','deptname','mail','manager'}:
+            if k in person.keys():
+                if k == 'deptname':
+                   rec['manager_name'] = person['deptname'][person['deptname'].find("(")+1:person['deptname'].find(")")]
+                if k == 'manager':
+                    if  person[k] == None:
+                        rec['manager_email'] = 'None'
+                    else:
+                       rec['manager_email'] = person['manager']['dn'][person['manager']['dn'].find("=")+1:person['manager']['dn'].find(",")]
+                       #rec['manager_email'] = person[k]['dn'].find("=")+1:person[k]['dn'].find(","))
+                rec[k] = person[k]
+            else:
+                rec[k] = ''
+        print 'Bugzilla EM   : ', rec['bugzillaemail']
+        print 'Department    : ', rec['deptname']
+        print 'E-Mail        : ', rec['mail']
+        print 'Manager Name  : ', rec['manager_name']
+        print 'Manager eMail : ', rec['manager_email']
+        print 'Emp Name cn   : ', rec['cn']
+        print 
+        _backend.add_person(rec['cn'],rec['bugzillaemail'],rec['mail'],rec['manager_email'],rec['deptname'])
+        
+
+       
+def build_teams():
+
+    #GET_ALL_COMMITTERS = 'SELECT name, bzemail, email, manager_email, department FROM metrics_people'
+
+    managers = {}
+    all_people = _backend.get_all_people()
+    for person in all_people:
+        persons_name    = person[0]
+        bzemail         = person[1]
+        email           = person[2]
+        manager_email   = person[3]
+        department      = person[4]
+        if manager_email not in managers.keys():
+            managers[manager_email] = []
+
+    for manager in managers.keys():
+        print '%s' %  manager
+        for employee in managers[manager]:
+            #pprint.pprint(employee)
+            print '\t %s' % str(employee)
+        manager_id = _backend.get_people_id(manager)
+        pprint.pprint(manager_id)
+        if manager_id == None:
+           manager_id = [0]
+        
+        _backend.update_manager_id(manager_id[0], manager)
+    
+
 
 """
 Calculate mean and standard deviation of data x[]:
@@ -578,6 +709,8 @@ def meanstdv(x):
     std = sqrt(std / float(n-1))
     return mean, std
 
+
+
 ############################################
 
 # Main 
@@ -588,9 +721,64 @@ if __name__ == '__main__':
     Command Line options
     parse_data.py [-b filename]
     """
+
+    init_data = False
+    init_args = False
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("-b", action='store', dest="branch_list",  help="File containing branch list")
+    run_group = parser.add_argument_group('Process Data')
+    run_group.add_argument("-b", action='store', dest="branch_list",  help="File containing branch list")
+
+    init_group = parser.add_argument_group('Init System')
+    init_group.add_argument("-i", action='store_true', dest="init", help="Initilize database on first run ")
+    init_group.add_argument("-u", action='store', dest="username",  help="LDAP username for phonebook access")
     args = parser.parse_args()
+
+    if args.init or args.username:
+        if args.init and args.username:
+            init_args = True
+        else:
+            print '\n'
+            if not args.username:
+                 print 'ERROR: -u username option required if -i or -p specified.'
+                 init_args = False
+            if not args.init:
+                 print 'ERROR: -i opion required to (re)initialize database.'
+                 init_args = False
+        if not init_args:
+            print '\n'
+            parser.print_help()
+            sys,exit()
+             
+    if init_args:
+        print '**********************************************************'
+        print 'WARNING: -i will delete all data and recreate the database'
+        print '            ALL    DATA    WILL    BE    LOST'
+        print '**********************************************************'
+        confirm = raw_input('Do you wish to reset the database (YES)/no? ')
+        if confirm == 'YES':
+            init_data = True
+        else:
+            print 'You typed "%s", exiting' % confirm
+            parser.print_help()
+            sys,exit()
+
     _backend = SQLiteBackend()
-    #parse_data()
-    process_data()
+
+    if args.init:
+        if args.username:
+            password = raw_input('Enter LDAP password: ')
+            print 'Initializing database'
+            _backend.init_data()
+            get_phone_book_data(args.username, password)
+            build_teams()
+            import_release_calendar()
+        else:
+            print 'LDAP username (-u) and password (-p) required to import phone book integration to complete init process'
+            sys,exit()
+    if args.branch_list:
+        print 'Importting data'
+        parse_data()
+        process_data()
+    else:
+        print 'No branch list file spefifed. Not importing data'
