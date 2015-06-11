@@ -101,7 +101,7 @@ create_view_stmts2 = {
                           LEFT JOIN metrics_regressions_fixed_view rfv ON rfv.release_id = mr.release_id
                           LEFT JOIN metrics_bugs_fixed_view bfv ON bfv.release_id = mr.release_id
                           LEFT JOIN metrics_backout_count_view bocv ON bocv.release_id = mr.release_id
-                          ORDER BY mr.release_id;
+                          ORDER BY mr.release_id'''
 }
 
 # Does the table exist query
