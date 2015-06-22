@@ -21,7 +21,7 @@ METRICS_REGRESSIONS_FIXED_VIEW = 'metrics_regressions_fixed_view'
 METRICS_BUGS_FIXED_VIEW = 'metrics_bugs_fixed_view'
 METRICS_BACKOUT_COUNT_VIEW = 'metrics_backout_count_view'
 METRICS_BUG_STATS_VIEW = 'metrics_bug_stats_view'
-
+METRICS_BUGS_TIME_TO_FIX_VIEW = 'metrics_bugs_time_to_fix_view'
 
 
 
@@ -89,7 +89,12 @@ create_view_stmts1 = {
                           FROM metrics_bugs WHERE fixed > "2000-01-01" GROUP BY release_id''',
                       METRICS_BACKOUT_COUNT_VIEW: '''CREATE VIEW metrics_backout_count_view 
                           AS SELECT count(*) AS backout_count, release_id 
-                          FROM metrics_changes WHERE is_backout = 1 GROUP BY release_id'''
+                          FROM metrics_changes WHERE is_backout = 1 GROUP BY release_id''',
+                      METRICS_BUGS_TIME_TO_FIX_VIEW: '''CREATE VIEW metrics_bugs_time_to_fix_view 
+                          AS SELECT bug, product, component, is_regression, release_id, 
+                          (JULIANDAY(fixed) - JULIANDAY(found)) AS time_to_fix 
+                          FROM metrics_bugs 
+                          WHERE JULIANDAY(fixed)  > 0'''
 }
 create_view_stmts2 = {
                       METRICS_BUG_STATS_VIEW: '''CREATE VIEW metrics_bug_stats_view  AS
