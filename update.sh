@@ -18,9 +18,9 @@ do
     echo `pwd`
     lastday=`cat $widr\last-metrics.txt`
     echo $lastday
-    version=`awk '{split($0,a,"."); print  a[1]}' $wdir/browser/config/version.txt`
     echo $today >$wdir/last-metrics.txt
     /usr/local/bin/hg pull -u
+    version=`awk '{split($0,a,"."); print  a[1]}' $wdir/browser/config/version.txt`
     /usr/local/bin/hg metrics -f $start_dir/hg-metrics/$branch-$version.json -d "$lastday to $today"
     echo $branch-$version `pwd` >> $start_dir/hg-metrics/branchlist
 done
