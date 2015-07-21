@@ -3,7 +3,8 @@ import sys
 import traceback
 import pprint
 import mysql
-
+import mysql.connector
+#import MySQLdb
 
 METRICS_RELEASE_TABLE_NAME    = 'metrics_releases'
 METRICS_FILE_LIST_TABLE_NAME  = 'metrics_files'
@@ -30,9 +31,9 @@ METRICS_BUGS_TIME_TO_FIX_VIEW = 'metrics_bugs_time_to_fix_view'
 
 # Create table statements
 create_table_stmts = {METRICS_RELEASE_TABLE_NAME: '''CREATE TABLE metrics_releases(release_name VARCHAR(100), 
-                         release_number INTEGER, release_id INTEGER PRIMARY KEY)''',
+                         release_number INTEGER, release_id INTEGER PRIMARY KEY NOT NULL AUTO_INCREMENT)''',
                       METRICS_FILE_LIST_TABLE_NAME: '''CREATE TABLE metrics_files(file_name VARCHAR(250),
-                         file_id INTEGER PRIMARY KEY, mean INTEGER, stdev INTEGER)''',
+                         file_id INTEGER PRIMARY KEY NOT NULL AUTO_INCREMENT, mean INTEGER, stdev INTEGER)''',
                       METRICS_CHANGES_TABLE_NAME: '''CREATE TABLE metrics_changes (delta INTEGER, 
                          total_lines INTEGER, percent_change INTEGER, file_id INTEGER, release_id INTEGER, 
                          bug VARCHAR(8), commit_id VARCHAR(100), is_backout INTEGER, committer_name VARCHAR(25), 
@@ -42,10 +43,10 @@ create_table_stmts = {METRICS_RELEASE_TABLE_NAME: '''CREATE TABLE metrics_releas
                           file_id INTEGER, percent_change INTEGER, bugs VARCHAR(100), backout_count INTEGER, 
                           committers VARCHAR(250), reviewers VARCHAR(250), approvers VARCHAR(250), msgs VARCHAR(500), 
                           total_commits INTEGER, bug_count INTEGER, regression_count INTEGER, author_count INTEGER)''',
-                      METRICS_PEOPLE_TABLE_NAME: '''CREATE TABLE metrics_people (people_id INTEGER PRIMARY KEY,
+                      METRICS_PEOPLE_TABLE_NAME: '''CREATE TABLE metrics_people (people_id INTEGER PRIMARY KEY NOT NULL AUTO_INCREMENT ,
                           name VARCHAR(25), bzemail VARCHAR(25), email VARCHAR(25), manager_email VARCHAR(25), 
                           manager_id INTEGER,  department VARCHAR(50))''',
-                      METRICS_REGRESSIONS_TABLE_NAME: '''CREATE TABLE metrics_bugs (bug INTEGER PRIMARY KEY, 
+                      METRICS_REGRESSIONS_TABLE_NAME: '''CREATE TABLE metrics_bugs (bug INTEGER PRIMARY KEY NOT NULL, 
                           version VARCHAR(12), found DATE, fixed DATE, product VARCHAR(25), status VARCHAR(25), 
                           component VARCHAR(25), is_regression INTEGER, release_id INTEGER)''',
                       METRICS_RELEASE_SCHEDULE: '''CREATE TABLE metrics_release_schedule (start_date DATE, 
@@ -59,8 +60,8 @@ create_view_stmts1 = {
                           e.people_id AS c_id, e.department AS department FROM metrics_people e 
                           INNER JOIN metrics_people m ON e.manager_id = m.people_id ORDER BY m_id''',
                       METRICS_FILE_REGRESSION_RATE_VIEW: '''CREATE VIEW metrics_file_regression_rate_view 
-                          AS SELECT mc.file_id, mf.file_name, TOTAL(mc.delta) AS lines_changed, 
-                          TOTAL(is_regression) AS regressions, TOTAL(is_backout) AS backouts 
+                          AS SELECT mc.file_id, mf.file_name, IFNULL(SUM(mc.delta),0.0) AS lines_changed, 
+                          IFNULL(SUM(is_regression),0.0) AS regressions, IFNULL(SUM(is_backout),0.0) AS backouts 
                           FROM metrics_files mf, metrics_changes mc WHERE mf.file_id = mc.file_id  
                           GROUP BY mc.file_id''',
                       METRICS_RELEASE_MASTER_VIEW: '''CREATE VIEW metrics_release_master_view 
@@ -71,8 +72,8 @@ create_view_stmts1 = {
                           OR (ms.release_branch = mr.release_number and mr.release_name like 'release%') 
                           OR (ms.aurora = mr.release_number and mr.release_name like 'aurora%') ''',
                       METRICS_TEAM_REGRESSION_RATE_VIEW:'''CREATE VIEW metrics_team_regression_rate_view 
-                          AS SELECT m.manager, m.department, r.release_number, TOTAL(c.delta) AS lines_changed, 
-                          TOTAL(is_regression) AS regressions, TOTAL(is_backout) AS backouts 
+                          AS SELECT m.manager, m.department, r.release_number, IFNULL(SUM(c.delta),0.0) AS lines_changed, 
+                          IFNULL(SUM(is_regression),0.0) AS regressions, IFNULL(SUM(is_backout),0.0) AS backouts 
                           FROM metrics_team_view m, metrics_changes c, metrics_releases r 
                           WHERE c.committer_name = m.name AND c.release_id = r.release_id 
                           GROUP BY c.committer_name, r.release_number''',
@@ -93,14 +94,14 @@ create_view_stmts1 = {
                           FROM metrics_changes WHERE is_backout = 1 GROUP BY release_id''',
                       METRICS_BUGS_TIME_TO_FIX_VIEW: '''CREATE VIEW metrics_bugs_time_to_fix_view 
                           AS SELECT bug, product, component, is_regression, release_id, 
-                          (JULIANDAY(fixed) - JULIANDAY(found)) AS time_to_fix 
+                          (TO_DAYS(fixed) - TO_DAYS(found)) AS time_to_fix 
                           FROM metrics_bugs 
-                          WHERE JULIANDAY(fixed)  > 0'''
+                          WHERE TO_DAYS(fixed)  > 0'''
 }
 create_view_stmts2 = {
                       METRICS_BUG_STATS_VIEW: '''CREATE VIEW metrics_bug_stats_view  AS
                           SELECT mr.release_id, rcv.regression_count, bcv.bug_count, rfv.regressions_fixed,
-                          bfv.bugs_fixed, bocv.backout_count, rcv.release_id
+                          bfv.bugs_fixed, bocv.backout_count 
                           FROM metrics_releases mr
                           LEFT JOIN metrics_regression_count_view rcv ON rcv.release_id = mr.release_id
                           LEFT JOIN metrics_bug_count_view bcv ON bcv.release_id = mr.release_id
@@ -111,40 +112,42 @@ create_view_stmts2 = {
 }
 
 # Does the table exist query
-TABLE_EXIST_STMT = 'SELECT name FROM sqlite_master WHERE type="table" AND name=?'
-VIEW_EXIST_STMT  = 'SELECT name FROM sqlite_master WHERE type="view" AND name=?'
+#TABLE_EXIST_STMT = 'SELECT name FROM sqlite_master WHERE type="table" AND name=?'
+#VIEW_EXIST_STMT  = 'SELECT name FROM sqlite_master WHERE type="view" AND name=?'
+TABLE_EXIST_STMT = 'SELECT table_name FROM information_schema.tables WHERE table_name = %s' 
+VIEW_EXIST_STMT  = 'SELECT table_name FROM information_schema.tables WHERE table_name = %s' 
 
 # Insert statements
-INSERT_FILE_NAME  = 'INSERT INTO metrics_files (file_name) VALUES(?)'
-INSERT_RELEASE    = 'INSERT INTO metrics_releases (release_name, release_number) VALUES (?,?)'
+INSERT_FILE_NAME  = ('INSERT INTO metrics_files (file_name) VALUES(%s)')
+INSERT_RELEASE    = ('INSERT INTO metrics_releases (release_name, release_number) VALUES (%s,%s)')
 
-INSERT_CHANGES    = 'INSERT INTO metrics_changes (file_id, release_id, delta, total_lines, percent_change, ' \
-                    'bug, commit_id, is_backout, committer_name, reviewer, approver, msg, is_regression, ' \
-                    'found, fixed) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+INSERT_CHANGES    = ('INSERT INTO metrics_changes (file_id, release_id, delta, total_lines, percent_change, '
+                    'bug, commit_id, is_backout, committer_name, reviewer, approver, msg, is_regression, '
+                    'found, fixed) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)')
 
-INSERT_SUMMARY    = 'INSERT INTO metrics_summary (release_id, bugs, file_id, percent_change, backout_count, ' \
+INSERT_SUMMARY    = ('INSERT INTO metrics_summary (release_id, bugs, file_id, percent_change, backout_count, ' \
                     'committers, reviewers, approvers, msgs, total_commits, bug_count, regression_count, author_count) ' \
-                    'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
-INSERT_PEOPLE = 'INSERT INTO metrics_people (name, bzemail, email, manager_email, department) VALUES (?,?,?,?,?)'
-INSERT_REGRESSION = 'INSERT INTO metrics_bugs (bug, version, found, fixed, product, status, component, ' \
-                     'is_regression, release_id) VALUES (?,?,?,?,?,?,?,?,?)'
-INSERT_RELEASE_SCHEDULE = 'INSERT INTO metrics_release_schedule (start_date, nightly, aurora, beta, release_branch) VALUES (?,?,?,?,?)'
+                    'VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)')
+INSERT_PEOPLE = ('INSERT INTO metrics_people (name, bzemail, email, manager_email, department) VALUES (%s,%s,%s,%s,%s)')
+INSERT_REGRESSION = ('INSERT INTO metrics_bugs (bug, version, found, fixed, product, status, component, ' \
+                     'is_regression, release_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)')
+INSERT_RELEASE_SCHEDULE = ('INSERT INTO metrics_release_schedule (start_date, nightly, aurora, beta, release_branch) VALUES (%s, %s, %s, %s, %s)')
 
 # Update statements
-UPDATE_AVG_CHANGE         = 'UPDATE metrics_files SET  mean = ?, stdev = ?  WHERE file_id = ?'
-UPDATE_PERCENT_CHANGE     = 'UPDATE metrics_changes SET percent_change= ?  WHERE file_id = ? and commit_id = ?'
-UPDATE_REGRESSION_CHANGE  = 'UPDATE metrics_changes SET is_regression = ?, found = ?, fixed = ? WHERE bug = ?'
-UPDATE_SUMMARY            = 'UPDATE metrics_summary SET percent_change = ?, bugs = ?, backout_count = ?, ' \
-                            'committers = ?, reviewers = ?, approvers = ?, msgs = ?, total_commits = ?,  ' \
-                            'bug_count = ?, regression_count = ?, author_count = ? WHERE release_id = ? AND file_id = ?'
-UPDATE_REGRESSION_COUNT_SUMMARY  = 'UPDATE metrics_summary SET regression_count = ?  WHERE  file_id = ? AND release_id = ?'
-UPDATE_BUG_COUNT_SUMMARY  = 'UPDATE metrics_summary SET bug_count = ?  WHERE  bug = ?'
-UPDATE_AUTHOR_COUNT_SUMMARY  = 'UPDATE metrics_summary SET author_count = ?  WHERE  bug = ?'
-UPDATE_PEOPLE = 'UPDATE metrics_people SET bzemail = ?, SET email = ?, SET manager_email = ?, SET department = ? WHERE bzemail = ?'
-UPDATE_REGRESSIONS = 'UPDATE metrics_bugs SET fixed = ?, status = ?,is_regression = ?, release_id = ?  WHERE bug = ?'
-UPDATE_BUG_FIXED_TIME = 'UPDATE metrics_bugs set time_to_fix = ? WHERE bug = ?'
-UPDATE_BUG_RELEASE_ID = 'UPDATE metrics_bugs SET release_id = ? WHERE bug = ?'
-UPDATE_MANAGER_ID     = 'UPDATE metrics_people SET manager_id = ?  WHERE manager_email = ?' 
+UPDATE_AVG_CHANGE         = ('UPDATE metrics_files SET  mean = %s, stdev = %s  WHERE file_id = %s')
+UPDATE_PERCENT_CHANGE     = ('UPDATE metrics_changes SET percent_change= %s  WHERE file_id = %s and commit_id = %s')
+UPDATE_REGRESSION_CHANGE  = ('UPDATE metrics_changes SET is_regression = %s, found = %s, fixed = %s WHERE bug = %s')
+UPDATE_SUMMARY            = ('UPDATE metrics_summary SET percent_change = %s, bugs = %s, backout_count = %s, ' \
+                            'committers = %s, reviewers = %s, approvers = %s, msgs = %s, total_commits = %s,  ' \
+                            'bug_count = %s, regression_count = %s, author_count = %s WHERE release_id = %s AND file_id = %s')
+UPDATE_REGRESSION_COUNT_SUMMARY  = ('UPDATE metrics_summary SET regression_count = %s  WHERE  file_id = %s AND release_id = %s')
+UPDATE_BUG_COUNT_SUMMARY  = ('UPDATE metrics_summary SET bug_count = %s  WHERE  bug = %s')
+UPDATE_AUTHOR_COUNT_SUMMARY  = ('UPDATE metrics_summary SET author_count = %s  WHERE  bug = %s')
+UPDATE_PEOPLE = ('UPDATE metrics_people SET email = %s, SET manager_email = %s, SET department = %s WHERE bzemail = %s')
+UPDATE_REGRESSIONS = ('UPDATE metrics_bugs SET fixed = %s, status = %s,is_regression = %s, release_id = %s  WHERE bug = %s')
+UPDATE_BUG_FIXED_TIME = ('UPDATE metrics_bugs set time_to_fix = %s WHERE bug = %s')
+UPDATE_BUG_RELEASE_ID = ('UPDATE metrics_bugs SET release_id = %s WHERE bug = %s')
+UPDATE_MANAGER_ID     = ('UPDATE metrics_people SET manager_id = %s  WHERE manager_email = %s')
 
 
 # Could not get this to parameterize properly with ?'s
@@ -152,75 +155,73 @@ DROP_TABLE_STMT = "DROP TABLE %s"
 DROP_VIEW_STMT = "DROP VIEW %s"
 
 # Query data statements
-GET_ALL_CHANGE_PER_FILES = 'SELECT metrics_files.file_name, metrics_releases.release_name, metrics_changes.percent_change ' \
+GET_ALL_CHANGE_PER_FILES = ('SELECT metrics_files.file_name, metrics_releases.release_name, metrics_changes.percent_change ' \
                       'FROM metrics_files, metrics_releases, metrics_changes ' \
                       'WHERE metrics_files.file_id = metrics_changes.file_id and metrics_releases.release_id = metrics_changes.release_Id ' \
-                      'ORDER BY  metrics_changes.file_id,metrics_changes.release_id'
+                      'ORDER BY  metrics_changes.file_id,metrics_changes.release_id')
 
-GET_CHANGE_PER_FILE = 'SELECT metrics_files.file_name, metrics_releases.release_name, ' \
+GET_CHANGE_PER_FILE = ('SELECT metrics_files.file_name, metrics_releases.release_name, ' \
                       'metrics_changes.release_id, metrics_changes.percent_change,' \
                       'metrics_changes.delta, metrics_changes.total_lines ' \
                       'FROM metrics_files, metrics_releases, metrics_changes ' \
                       'WHERE metrics_files.file_id = metrics_changes.file_id ' \
                       'AND metrics_releases.release_id = metrics_changes.release_Id ' \
-                      'AND metrics_changes.file_id =  ? ' \
-                      'ORDER BY metrics_changes.release_id'
-GET_RELEASE_ID = 'SELECT release_id FROM metrics_releases WHERE release_name = ?' 
-GET_FILE_ID    = 'SELECT file_id FROM metrics_files WHERE file_name = ?' 
-GET_COMMIT_ID  = 'SELECT commit_id from metrics_changes where commit_id = ? AND file_id = ?'
-GET_RELEASES   = 'SELECT release_id, release_name FROM metrics_releases ORDER BY release_id'
-GET_RELEASE_IDS = 'SELECT release_id FROM metrics_releases ORDER BY release_id'
-GET_FILES      = 'SELECT file_id, file_name FROM metrics_files ORDER BY file_id'
-GET_FILE_IDS   = 'SELECT file_id FROM metrics_files ORDER BY file_id'
-GET_CHANGE_DATA= 'SELECT total_lines, delta, percent_change, file_id, release_id, bug, ' \
+                      'AND metrics_changes.file_id =  %s ' \
+                      'ORDER BY metrics_changes.release_id')
+GET_RELEASE_ID = ('SELECT release_id FROM metrics_releases WHERE release_name = %s')
+GET_FILE_ID    = ('SELECT file_id FROM metrics_files WHERE file_name = %s')
+GET_COMMIT_ID  = ('SELECT commit_id from metrics_changes where commit_id = %s AND file_id = %s')
+GET_RELEASES   = ('SELECT release_id, release_name FROM metrics_releases ORDER BY release_id')
+GET_RELEASE_IDS = ('SELECT release_id FROM metrics_releases ORDER BY release_id')
+GET_FILES      = ('SELECT file_id, file_name FROM metrics_files ORDER BY file_id')
+GET_FILE_IDS   = ('SELECT file_id FROM metrics_files ORDER BY file_id')
+GET_CHANGE_DATA= ('SELECT total_lines, delta, percent_change, file_id, release_id, bug, ' \
                  'commit_id, is_backout, committer_name, reviewer, approver, msg ' \
-                 'FROM metrics_changes WHERE file_id = ?'
-GET_CHANGE_PER_FILE_RELEASE  = 'SELECT file_id, total_lines, delta, percent_change, commit_id, ' \
+                 'FROM metrics_changes WHERE file_id = %s')
+GET_CHANGE_PER_FILE_RELEASE  = ('SELECT file_id, total_lines, delta, percent_change, commit_id, ' \
                  'bug, is_backout, committer_name, reviewer, approver, msg, is_regression FROM metrics_changes ' \
-                 'WHERE file_id = ? AND release_id = ? '
+                 'WHERE file_id = %s AND release_id = %s ')
                  
-GET_SUMMARY_DATA = 'SELECT release_id, file_id, percent_change FROM metrics_summary WHERE release_id = ? AND file_id = ?'
-GET_ALL_SUMMARY_DATA = 'SELECT release_id, file_id, percent_change FROM metrics_summary WHERE file_id = ?'
-GET_FILES_PER_RELEASE = 'SELECT file_id FROM metrics_changes WHERE release_id =? ORDER BY file_id'
-GET_BUGS = 'SELECT DISTINCT bug FROM metrics_changes WHERE bug > 0'
-GET_BUGS_BY_FILE = 'SELECT DISTINCT bug FROM metrics_changes WHERE file_id = ? AND bug > 0'
-GET_BUGS_BY_FILE_RELEASE = 'SELECT DISTINCT bug FROM metrics_changes WHERE file_id = ? AND release_id = ? AND bug > 0'
-GET_REGRESSIONS_BY_FILE_RELEASE = 'SELECT DISTINCT bug, is_regression ' \
-    'FROM metrics_changes WHERE file_id = ? AND release_id = ? AND is_regression = 1'
-GET_REGRESSIONS_BY_RELEASE = 'SELECT DISTINCT bug, is_regression FROM metrics_changes WHERE release_id = ? AND is_regression = 1'
-GET_REGRESSIONS = 'SELECT DISTINCT bug, file_id, release_id FROM metrics_changes WHERE is_regression = 1 ORDER BY file_id, release_id'
-#GET_REGRESSIONS_BY_FILE_RELEASE  = 'SELECT DISTINCT bug, sum(is_regression) FROM metrics_changes WHERE file_id = ? AND release_id = ?'
-GET_ALL_PEOPLE = 'SELECT name, bzemail, email, manager_email, department FROM metrics_people'
-GET_COMMITTER_EMAIL = 'SELECT bzemail, email, manager_email, department FROM metrics_people WHERE email = ?'
-GET_COMMITTER_BZEMAIL = 'SELECT bzemail, email, manager_email, department FROM metrics_people WHERE bzemail = ?'
-GET_REGRESSION_BUG = 'SELECT bug, version, found, fixed, product, status, component, is_regression FROM metrics_bugs WHERE bug = ?'
-GET_REGRESSION_RELEASE = 'SELECT bug, found, fixed, product, status, component, is_regression FROM metrics_bugs WHERE version = ?'
-GET_ALL_BUGS = 'SELECT bug, version, found, fixed, product, status, component, is_regression, release_id FROM metrics_bugs'
-GET_ALL_BUG_IDS = 'SELECT bug FROM metrics_bugs'
-GET_MAX_VERSIONS = 'SELECT nightly, aurora, beta, release_branch FROM metrics_release_schedule ' \
+GET_SUMMARY_DATA = ('SELECT release_id, file_id, percent_change FROM metrics_summary WHERE release_id = %s AND file_id = %s')
+GET_ALL_SUMMARY_DATA = ('SELECT release_id, file_id, percent_change FROM metrics_summary WHERE file_id = %s')
+GET_FILES_PER_RELEASE = ('SELECT file_id FROM metrics_changes WHERE release_id =%s ORDER BY file_id')
+GET_BUGS = ('SELECT DISTINCT bug FROM metrics_changes WHERE bug > 0')
+GET_BUGS_BY_FILE = ('SELECT DISTINCT bug FROM metrics_changes WHERE file_id = %s AND bug > 0')
+GET_BUGS_BY_FILE_RELEASE = ('SELECT DISTINCT bug FROM metrics_changes WHERE file_id = %s AND release_id = %s AND bug > 0')
+GET_REGRESSIONS_BY_FILE_RELEASE = ('SELECT DISTINCT bug, is_regression ' \
+    'FROM metrics_changes WHERE file_id = %s AND release_id = %s AND is_regression = 1')
+GET_REGRESSIONS_BY_RELEASE = ('SELECT DISTINCT bug, is_regression FROM metrics_changes WHERE release_id = %s AND is_regression = 1')
+GET_REGRESSIONS = ('SELECT DISTINCT bug, file_id, release_id FROM metrics_changes WHERE is_regression = 1 ORDER BY file_id, release_id')
+#GET_REGRESSIONS_BY_FILE_RELEASE  = ('SELECT DISTINCT bug, sum(is_regression) FROM metrics_changes WHERE file_id = %s AND release_id = %s')
+GET_ALL_PEOPLE = ('SELECT name, bzemail, email, manager_email, department FROM metrics_people')
+GET_COMMITTER_EMAIL = ('SELECT bzemail, email, manager_email, department FROM metrics_people WHERE email = %s')
+GET_COMMITTER_BZEMAIL = ('SELECT bzemail, email, manager_email, department FROM metrics_people WHERE bzemail = %s')
+GET_REGRESSION_BUG = ('SELECT bug, version, found, fixed, product, status, component, is_regression FROM metrics_bugs WHERE bug = %s')
+GET_REGRESSION_RELEASE = ('SELECT bug, found, fixed, product, status, component, is_regression FROM metrics_bugs WHERE version = %s')
+GET_ALL_BUGS = ('SELECT bug, version, found, fixed, product, status, component, is_regression, release_id FROM metrics_bugs')
+GET_ALL_BUG_IDS = ('SELECT bug FROM metrics_bugs')
+GET_MAX_VERSIONS = ('SELECT nightly, aurora, beta, release_branch FROM metrics_release_schedule ' \
                    'WHERE start_date = (SELECT MAX(start_date) FROM metrics_release_schedule ' \
-                   'WHERE start_date <= ?)'
-GET_MAX_NIGHTLY = 'SELECT MAX(nightly) FROM metrics_release_schedule'
-GET_PEOPLE_ID = 'SELECT people_id FROM metrics_people WHERE email = ?'
+                   'WHERE start_date <= %s)')
+GET_MAX_NIGHTLY = ('SELECT MAX(nightly) FROM metrics_release_schedule')
+GET_PEOPLE_ID = ('SELECT people_id FROM metrics_people WHERE email = %s')
 
-GET_REGRESSION_COUNT ='SELECT regression_count, release_id  FROM metrics_bug_stats_view'
-GET_BUG_COUNT = 'SELECT bug_count, release_id FROM metrics_bug_stats_view'
-GET_REGRESSION_FIXED = 'SELECT regressions_fixed, release_id FROM metrics_bug_stats_view'
-GET_BUG_FIXED = 'SELECT bugs_fixed, release_id FROM metrics_bug_stats_view'
-GET_BACKOUT_COUNT = 'SELECT backout_count, release_id FROM metrics_bug_stats_view'
-GET_RELEASE_SCHEDULE = 'SELECT start_date, nightly, aurora, beta, release_branch FROM metrics_release_schedule WHERE start_date= ?'
-GET_RELEASE_SCHEDULE_ALL = 'SELECT start_date, nightly, aurora, beta, release_branch FROM metrics_release_schedule WHERE release_branch > 24 ORDER by nightly'
+GET_REGRESSION_COUNT = ('SELECT regression_count, release_id  FROM metrics_bug_stats_view')
+GET_BUG_COUNT = ('SELECT bug_count, release_id FROM metrics_bug_stats_view')
+GET_REGRESSION_FIXED = ('SELECT regressions_fixed, release_id FROM metrics_bug_stats_view')
+GET_BUG_FIXED = ('SELECT bugs_fixed, release_id FROM metrics_bug_stats_view')
+GET_BACKOUT_COUNT = ('SELECT backout_count, release_id FROM metrics_bug_stats_view')
+GET_RELEASE_SCHEDULE = ('SELECT start_date, nightly, aurora, beta, release_branch FROM metrics_release_schedule WHERE start_date = %s')
+GET_RELEASE_SCHEDULE_ALL  = ('SELECT start_date, nightly, aurora, beta, release_branch FROM metrics_release_schedule WHERE release_branch > 24 ORDER by nightly')
 
-
-class SQLiteBackend(object):
-
-    ###
-    # Establish connection to database
-    def __init__(self, dbname='churndb.sql'):
-        if dbname:
-            self._dbconn = sqlite3.connect(dbname)
-        else:
-            self._dbconn = sqlite3.connect('churndb.sql')
+class MySQLBackend(object):
+    def __init__(self):
+        #self._dbconn = MySQLdb.connector.connect(user='root', password='root',
+        self._dbconn = mysql.connector.connect(user='root', password='root',
+                              host='127.0.0.1',
+                              port='8889',
+                              database='churndb')
+        print mysql.connector.paramstyle
         self._verify_tables()
 
     ### 
@@ -235,15 +236,15 @@ class SQLiteBackend(object):
             if queryparams:
                 print query
                 print queryparams
-                #print '--'
+                print '--'
                 cursor.execute(query, queryparams)
                 #print 'TOTAL CHANGES:', self._dbconn.total_changes
             else:
                 cursor.execute(query)
         except:
             print "Exception during query: %s" % query
-            if queryparams:
-                print "Query Params for this query: %s" % queryparams
+            #if queryparams:
+            #    print "Query Params for this query: %s" % queryparams
             traceback.print_exc()
             cursor.close()
             cursor = None
@@ -310,7 +311,7 @@ class SQLiteBackend(object):
     def add_change_values(self, file_id, release_id, delta, total_lines, percent_change, bug, commit_id, is_backout, committer_name, reviewer, approver, msg, is_regression,  found, fixed):
         # Add entry to the METRICS_CHANGES table
         c = self._dbconn.cursor()
-        self._run_execute(c, INSERT_CHANGES , [file_id, release_id, delta, total_lines, percent_change, bug, commit_id, is_backout, committer_name, reviewer, approver, msg, is_regression,  found, fixed])
+        self._run_execute(c, INSERT_CHANGES , (file_id, release_id, delta, total_lines, percent_change, bug, commit_id, is_backout, committer_name, reviewer, approver, msg, is_regression,  found, fixed))
         self._dbconn.commit()
 
     def add_file_values(self, file_name):
@@ -323,7 +324,7 @@ class SQLiteBackend(object):
     def add_release_values(self, release_name, release_number):
         # Add entry to the METRICS_FILES table
         c = self._dbconn.cursor()
-        self._run_execute(c, INSERT_RELEASE, [release_name, release_number])
+        self._run_execute(c, INSERT_RELEASE, (release_name, release_number))
         self._dbconn.commit()
         return self.get_release_id(release_name)
 
@@ -369,7 +370,7 @@ class SQLiteBackend(object):
 
     def get_changes_by_file_release(self, file_id, release_id):
         c = self._dbconn.cursor()
-        c = self._run_execute(c, GET_CHANGE_PER_FILE_RELEASE, [file_id, release_id])
+        c = self._run_execute(c, GET_CHANGE_PER_FILE_RELEASE, (file_id, release_id))
         return c.fetchall()
 
     def update_avg_change(self, file_id, mean, stdev):
@@ -399,7 +400,7 @@ class SQLiteBackend(object):
 
     def get_summary_data(self, release_id, file_id):
         c = self._dbconn.cursor()
-        c = self._run_execute(c,GET_SUMMARY_DATA, [release_id, file_id] )
+        c = self._run_execute(c,GET_SUMMARY_DATA, (release_id, file_id))
         return c.fetchone()
 
     def get_all_summary_data(self, file_id):
@@ -409,7 +410,7 @@ class SQLiteBackend(object):
 
     def get_files_per_release(self, release_id):
         c = self._dbconn.cursor()
-        c = self._run_execute(c,GET_FILES_PER_RELEASE, [release_id] )
+        c = self._run_execute(c,GET_FILES_PER_RELEASE, [release_id])
         return c.fetchall()
    
     def get_bugs(self):
@@ -424,7 +425,7 @@ class SQLiteBackend(object):
 
     def get_bugs_by_file_release(self, file_id, release_id):
         c = self._dbconn.cursor()
-        c = self._run_execute(c,GET_BUGS_BY_FILE_RELEASE, [file_id, release_id])
+        c = self._run_execute(c,GET_BUGS_BY_FILE_RELEASE, (file_id, release_id))
         return c.fetchall()
 
     def update_regression_change(self, is_regression, found, fixed, bug ):
@@ -439,7 +440,7 @@ class SQLiteBackend(object):
 
     def get_regressions_by_release(self, release_id):
         c = self._dbconn.cursor()
-        c = self._run_execute(c,GET_REGRESSIONS_BY_RELEASE, (release_id))
+        c = self._run_execute(c,GET_REGRESSIONS_BY_RELEASE, [release_id])
         return c.fetchall()
 
     def get_regressions(self):
@@ -463,6 +464,12 @@ class SQLiteBackend(object):
         self._dbconn.commit()
 
     def add_person(self, name, bzemail, email, manager_email, deptname):
+        print name, bzemail, email, manager_email, deptname
+        #name = 'me'
+        #bzemail = 'me@me.com'
+        #email = 'me.me@me.com'
+        #manager_email = 'you@you.com'
+        #deptname = 'me thing'
         c = self._dbconn.cursor()
         c = self._run_execute(c, INSERT_PEOPLE, (name, bzemail, email, manager_email, deptname))
         self._dbconn.commit()
@@ -470,7 +477,7 @@ class SQLiteBackend(object):
 
     def update_person(self, bzemail, email, manager_email, deptname):
         c = self._dbconn.cursor()
-        c = self._run_execute(c, INSERT_PEOPLE, (bzemail, email, manager_email, deptname))
+        c = self._run_execute(c, UPDATE_PEOPLE, ( email, manager_email, deptname, bzemail))
         self._dbconn.commit()
 
     def get_all_people(self):
@@ -530,13 +537,8 @@ class SQLiteBackend(object):
 
     def update_manager_id(self, manager_id, manager_email):
         c = self._dbconn.cursor()
-        c = self._run_execute(c, UPDATE_MANAGER_ID ,[manager_id, manager_email])
+        c = self._run_execute(c, UPDATE_MANAGER_ID ,(manager_id, manager_email))
         self._dbconn.commit()
-
-    def get_release_schedule_all(self):
-        c = self._dbconn.cursor()
-        c = self._run_execute(c, GET_RELEASE_SCHEDULE_ALL)
-        return c.fetchall()
 
     def get_regession_count(self):
         c = self._dbconn.cursor()
@@ -565,11 +567,18 @@ class SQLiteBackend(object):
 
     def add_release_schedule(self, start_date, nightly, aurora, beta, release):
         c = self._dbconn.cursor()
-        c = self._run_execute(c, INSERT_RELEASE_SCHEDULE,[start_date, nightly, aurora, beta, release])
+        c = self._run_execute(c, INSERT_RELEASE_SCHEDULE,(start_date, nightly, aurora, beta, release))
         self._dbconn.commit()
+
+    def get_release_schedule_all(self):
+        c = self._dbconn.cursor()
+        c = self._run_execute(c, GET_RELEASE_SCHEDULE_ALL )
+        return c.fetchall()
 
     def get_release_schedule(self, start_date):
         c = self._dbconn.cursor()
         c = self._run_execute(c, GET_RELEASE_SCHEDULE, [start_date])
+        if ( c == None ):
+           return None
         return c.fetchone()
 

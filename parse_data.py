@@ -5,6 +5,7 @@ import argparse
 from array import *
 from churnhash2 import ChurnHash
 from backend import SQLiteBackend
+from mysqlbackend import MySQLBackend
 import pprint
 import re
 import httplib
@@ -86,6 +87,8 @@ def parse_data():
             fp.close()
 
             # Process the data for the release 
+            lastbugnumber  = None
+            bugdata = None
             for commit_id in history:
                 for file_data  in history[commit_id]["files"]:
                     if "filename" in file_data:
@@ -145,7 +148,11 @@ def parse_data():
             
                                 delta = file_data["added"] +  file_data["removed"]
                                 percent_change = float("{0:.2f}".format((float(delta) /  float(num_lines)) * 100))
-                                bugdata = get_bug_fields(bugnumber, ['keywords','creation_time','cf_last_resolved'])
+                                if bugnumber <> lastbugnumber:
+                                    bugdata = get_bug_fields(bugnumber, ['keywords','creation_time','cf_last_resolved'])
+                                    lastbugnumber = bugnumber
+                                else:
+                                    print 'Already have bug data'
                                 print 'Bug : %s' % bugnumber
                                 pprint.pprint(bugdata)
                                 if bugdata == None:
@@ -246,7 +253,11 @@ def get_bug_data(bugnumber,field_names):
     except httplib.HTTPException, e:
         print('HTTPException')
         return
-    return json.loads(response)
+    try:
+        return json.loads(response)
+    except ValueError:
+        print 'Error Decoding JSON Data'
+        return None
 
 # Calculate the average rate of change for each file 
 # for a given release and update the metrics_summary table
@@ -454,11 +465,27 @@ def get_el_search_data(json_query):
     data = json.dumps(json_query)
 
     clen = len(data)
-    req = urllib2.Request(url, data, {'Content-Type': 'application/json', 'Content-Length': clen})
-    f = urllib2.urlopen(req)
-    response = f.read()
-    f.close()
+    try:
+        req = urllib2.Request(url, data, {'Content-Type': 'application/json', 'Content-Length': clen})
+        f = urllib2.urlopen(req)
+        response = f.read()
+        f.close()
 
+    except urllib2.HTTPError, e:
+        print('HTTPError = ' + str(e.code))
+        if e.code == 401:
+            print 'Not Authorized to view bug %s' % bugnumber
+            return None
+        if e.code == 500:
+            print 'Server Error: Skipping for now'
+            return None
+        return
+    except urllib2.URLError, e:
+        print('URLError = ' + str(e.reason))
+        return None
+    except httplib.HTTPException, e:
+        print('HTTPException')
+        return None
     bugdata = json.loads(response)
     for bug in bugdata['hits']['hits']:
         bugnumber  = bug['fields']['bug_id']
@@ -597,12 +624,13 @@ def import_release_calendar():
                                             )
         rowcnt += 1
     for schedule in releaseDates:
+        schedule['startDate'] = re.sub('\*', '', schedule['startDate'])
         try:
             time.strptime(schedule['startDate'], '%Y-%m-%d')
             print 'Valid Start Date: %s' % schedule['startDate']
         except ValueError:
-             print 'Invalid Start Date: %s' % schedule['startDate']
-             continue
+            print 'Invalid Start Date: %s' % schedule['startDate']
+            continue
     
         checkit = _backend.get_release_schedule(schedule['startDate'])
         if checkit == None:
@@ -726,6 +754,9 @@ if __name__ == '__main__':
     init_args = False
 
     parser = argparse.ArgumentParser()
+    config_group = parser.add_argument_group('configure')
+    config_group.add_argument("-d", action='store', dest="database", choices=set(('sqlite', 'mysql')), default='mysql', help="type of database to use")
+
     run_group = parser.add_argument_group('Process Data')
     run_group.add_argument("-b", action='store', dest="branch_list",  help="File containing branch list")
 
@@ -733,6 +764,16 @@ if __name__ == '__main__':
     init_group.add_argument("-i", action='store_true', dest="init", help="Initilize database on first run ")
     init_group.add_argument("-u", action='store', dest="username",  help="LDAP username for phonebook access")
     args = parser.parse_args()
+
+    if args.database == 'mysql':
+        _backend = MySQLBackend()
+        print 'Using mysql backend'
+    elif args.database == 'sqlite':
+        _backend = _backend = SQLiteBackend()
+        print 'Using sqlite backend'
+    else:
+        print 'Database not supported'
+        sys.exit()
 
     if args.init or args.username:
         if args.init and args.username:
@@ -761,9 +802,7 @@ if __name__ == '__main__':
         else:
             print 'You typed "%s", exiting' % confirm
             parser.print_help()
-            sys,exit()
-
-    _backend = SQLiteBackend()
+            sys.exit()
 
     if args.init:
         if args.username:

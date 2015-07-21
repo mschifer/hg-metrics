@@ -1,4 +1,7 @@
 #!/bin/sh -x
+export PATH=/Applications/MAMP/Library/bin:$PATH
+export PYTHONPATH=/Applications/MAMP/Library/lib/python2.7:/Applications/MAMP/Library/lib/python2.7/site-packages
+
 today=`date +%Y-%m-%d`
 cd /Users/mschifer
 start_dir=`pwd`
